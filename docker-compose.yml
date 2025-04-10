@@ -1,0 +1,21 @@
+version: '3.0'
+services:
+  gameserver:
+    build: docker/gameserver
+    volumes:
+      - ./.app/gameserver:/home/container/gameserver
+    ports:
+      - "25565:25565"
+    environment:
+      - USER_ID=${USER_ID}
+      - GROUP_ID=${GROUP_ID}
+      - MEM_MAX=${MEM_MAX}
+  development:
+    build: docker/development
+    volumes:
+      - ./.app/development:/home/container/development
+    ports:
+      - "3000:3000"
+    environment:
+      - USER_ID=${USER_ID}
+      - GROUP_ID=${GROUP_ID}

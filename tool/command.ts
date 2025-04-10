@@ -8,5 +8,7 @@ export type Command = {
 
 import help from "./commands/help.ts";
 import components from "./commands/components.ts";
+import setup from "./commands/setup.ts";
+import startServer from "./commands/start-server.ts";
 
-export const COMMANDS: Command[] = [help, components];
+export const COMMANDS: Command[] = [help, components, setup, startServer];
