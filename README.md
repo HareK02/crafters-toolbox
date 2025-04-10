@@ -1,5 +1,7 @@
 # Crafter's Toolbox
 
+CRTB is a tool for Minecraft:Java Edition that helps you create and manage your projects.
+
 ## Description
 
 クラフターズツールボックスは、Minecraftの様々な制作を支援する外部ツールです。
