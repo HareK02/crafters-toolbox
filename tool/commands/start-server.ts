@@ -1,28 +1,25 @@
 import { Command } from "../command.ts";
+import { dockerTest } from "../docker-test.ts";
 
 const cmd: Command = {
   name: "start-server",
   description: "Start the server",
   handler: async (args: string[]) => {
-    if (args.length === 0) {
+    if (args.length === 0 || args[0] === "build") {
       console.log("Starting server...");
-      // Check if docker is installed
-      const dockerCheck = new Deno.Command("docker", {
-        args: ["--version"],
-      });
-      const dockerCheckResult = dockerCheck.spawn();
-      const res = await dockerCheckResult.status;
-      if (!res.success) {
-        console.error("Docker is not installed. Please install Docker.");
-        return;
-      }
 
-      
+      if (!(await dockerTest())) return;
+
       const uid = Deno.build.os === "linux" ? Deno.uid() : 1000;
       const gid = Deno.build.os === "linux" ? Deno.gid() : 100;
 
       const dockercmd = new Deno.Command("docker", {
-        args: ["compose", "up", "gameserver", "--build"],
+        args: [
+          "compose",
+          "up",
+          "gameserver",
+          args[0] === "build" ? "--build" : "-d",
+        ],
         env: {
           USER_ID: `${uid}`,
           GROUP_ID: `${gid}`,

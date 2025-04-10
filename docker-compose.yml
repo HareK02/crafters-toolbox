@@ -2,6 +2,9 @@ version: '3.0'
 services:
   gameserver:
     build: docker/gameserver
+    container_name: crafters-toolbox-gameserver
+    tty: true
+    stdin_open: true
     volumes:
       - ./.app/gameserver:/home/container/gameserver
     ports:
