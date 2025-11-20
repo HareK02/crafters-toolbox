@@ -1,0 +1,35 @@
+import {
+  ComponentIDString,
+  ComponentIDType,
+  IComponent,
+} from "../component.ts";
+import { IReference } from "../reference.ts";
+
+export class Mod implements IComponent {
+  kind = ComponentIDType.MODS;
+  name: string;
+  reference?: IReference;
+  source?: IComponent["source"];
+  build?: IComponent["build"];
+  artifact?: IComponent["artifact"];
+
+  constructor(
+    name: string,
+    reference?: IReference,
+    options?: {
+      source?: IComponent["source"];
+      build?: IComponent["build"];
+      artifact?: IComponent["artifact"];
+    },
+  ) {
+    this.name = name;
+    this.reference = reference;
+    this.source = options?.source;
+    this.build = options?.build;
+    this.artifact = options?.artifact;
+  }
+
+  toIDString(): ComponentIDString {
+    return `mod:${this.name}`;
+  }
+}

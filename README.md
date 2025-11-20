@@ -4,13 +4,19 @@ CRTB is a tool for Minecraft:Java Edition that helps you create and manage your 
 
 ## Description
 
-クラフターズツールボックスは、Minecraftの様々な制作を支援する外部ツールです。
-本ツールは、MODやデータパックの開発を支援するために設計されています。
+クラフターズツールボックスは、Minecraft の様々な制作を支援する外部ツールです。
+本ツールは、MOD やデータパックの開発を支援するために設計されています。
 
 ## Features
 
 - サーバーの自動構築
-- 制作物の個別のバージョン管理
-- コラボレーション用のsshサーバー
+- プラグイン・Modの自動ビルド・デプロイ
+- 制作物のバージョン管理
+- コラボレーション用の ssh サーバー
 - バックアップアーカイブの作成
 
+## Dependencies
+
+- [Git](https://git-scm.com/)
+- [Deno](https://deno.land/)
+- [Docker](https://www.docker.com/).

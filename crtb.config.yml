@@ -1,0 +1,5 @@
+# base_image:eclipse-temurin:21-jdk
+game_server:
+  max_memory: 8G
+  min_memory: 2G
+ssh_enabled: true

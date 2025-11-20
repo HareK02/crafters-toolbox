@@ -1,6 +1,6 @@
 const VERSION = "0.0.1";
 
-import { Command, COMMANDS } from "./tool/command.ts";
+import { Command, COMMANDS } from "./scripts/command.ts";
 
 const args = Deno.args;
 if (!args[0]) {
@@ -13,12 +13,12 @@ if (!args[0]) {
       "  [____|_|  [__,_|_|  [__[___|_|    |___/   |_|[___/ [___/|_|_.__/ [___/_/[_[ ",
     ]
       .join("")
-      .replace(/\[/g, "\\")
+      .replace(/\[/g, "\\"),
   );
 
   console.log(
     `                      [ Version: ${VERSION} | Author: Hare ]\n` +
-      "-------------------------------------------------------------------------------"
+      "-------------------------------------------------------------------------------",
   );
   console.log("Type `help` to see all commands.");
 } else {
