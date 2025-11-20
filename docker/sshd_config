@@ -1,0 +1,19 @@
+Port {{SSH_PORT}}
+ListenAddress 0.0.0.0
+HostKey {{HOST_KEY_ED25519}}
+HostKey {{HOST_KEY_RSA}}
+AuthorizedKeysFile {{AUTHORIZED_KEYS_PATH}}
+PidFile {{SSHD_PID_FILE}}
+UsePrivilegeSeparation no
+StrictModes no
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+AllowTcpForwarding no
+AllowAgentForwarding no
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+AllowUsers {{SSH_USER}}
+Subsystem sftp internal-sftp
+LogLevel VERBOSE

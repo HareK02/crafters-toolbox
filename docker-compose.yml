@@ -1,14 +1,44 @@
 version: "3.0"
+
+x-base-service: &base-service
+  build: docker
+  tty: true
+  stdin_open: true
+  user: "${LOCAL_UID}:${LOCAL_GID}"
+  environment:
+    - LOCAL_UID=${LOCAL_UID}
+    - LOCAL_GID=${LOCAL_GID}
+    - LOCAL_USER=${LOCAL_USER}
+
 services:
-  crafters-toolbox:
-    build: docker
-    container_name: crafters-toolbox
-    tty: true
-    stdin_open: true
+  game-server:
+    <<: *base-service
+    container_name: crafters-toolbox-game
+    environment:
+      - SERVICE_ROLE=game
+      - MEM_MAX=${MEM_MAX}
     volumes:
       - ./server:/home/container/server
-      - ./components:/home/container/components
     ports:
       - "25565:25565"
+
+  ssh-server:
+    <<: *base-service
+    container_name: crafters-toolbox-ssh
     environment:
-      - MEM_MAX=${MEM_MAX}
+      - SERVICE_ROLE=ssh
+      - SSH_PORT=${SSH_PORT:-2222}
+      - LOCAL_USER=${LOCAL_USER}
+    volumes:
+      - ./components:/home/container/components
+    ports:
+      - "2222:2222"
+
+  monitor-server:
+    <<: *base-service
+    container_name: crafters-toolbox-monitor
+    environment:
+      - SERVICE_ROLE=monitor
+      - MONITOR_SUMMARY_INTERVAL=${MONITOR_SUMMARY_INTERVAL:-300}
+    volumes:
+      - ./components:/home/container/components
