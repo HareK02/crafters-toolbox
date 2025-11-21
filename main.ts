@@ -59,9 +59,7 @@ const promptForSubcommand = async (command: Command) => {
 
 const runInteractiveMenu = async () => {
   renderBanner();
-  intro("Crafter's Toolbox インタラクティブモード");
   let exitRequested = false;
-
   while (!exitRequested) {
     const commandChoice = await select({
       message: "実行するコマンドを選択してください",
@@ -88,7 +86,7 @@ const runInteractiveMenu = async () => {
 
     log.info(`${command.name}: ${command.description}`);
 
-    const chosenCommand = await promptForSubcommand(command) ?? command;
+    const chosenCommand = (await promptForSubcommand(command)) ?? command;
     if (chosenCommand === command && command.subcommands?.length) {
       // user backed out of subcommand selection
       if (command.subcommands.length) continue;

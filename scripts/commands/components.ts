@@ -731,6 +731,181 @@ const applyComponents = async (properties: PropertiesManager) => {
   currentStatus = undefined;
 };
 
+type ComponentListEntry = {
+  id: ComponentIDString;
+  type: ComponentIDType;
+  name: string;
+  component?: IComponent;
+  registered: boolean;
+};
+
+const COMPONENT_GROUPS = [
+  { type: ComponentIDType.WORLD, label: "World" },
+  { type: ComponentIDType.DATAPACKS, label: "Datapacks" },
+  { type: ComponentIDType.PLUGINS, label: "Plugins" },
+  { type: ComponentIDType.RESOURCEPACKS, label: "Resourcepacks" },
+  { type: ComponentIDType.MODS, label: "Mods" },
+] as const;
+
+const LOCAL_SOURCE_BASE: Record<ComponentIDType, string> = {
+  [ComponentIDType.WORLD]: "./server/world",
+  [ComponentIDType.DATAPACKS]: "./components/datapacks",
+  [ComponentIDType.PLUGINS]: "./components/plugins",
+  [ComponentIDType.RESOURCEPACKS]: "./components/resourcepacks",
+  [ComponentIDType.MODS]: "./components/mods",
+};
+
+const fallbackLocalPath = (type: ComponentIDType, name?: string) => {
+  const base = LOCAL_SOURCE_BASE[type];
+  if (!base) return undefined;
+  if (type === ComponentIDType.WORLD) return base;
+  if (!name) return base;
+  return `${base}/${name}`;
+};
+
+const formatSourceSummary = (
+  component: IComponent | undefined,
+  type: ComponentIDType,
+  name?: string,
+) => {
+  const source = component?.source;
+  if (source) {
+    switch (source.type) {
+      case "local": {
+        return source.path ? `local ${source.path}` : "local";
+      }
+      case "git": {
+        const branch = source.branch ? `+${source.branch}` : "";
+        const commit = !branch && source.commit
+          ? `@${source.commit.slice(0, 7)}`
+          : "";
+        const label = branch || commit ? `git${branch || commit}` : "git";
+        return `${label} ${source.url}`;
+      }
+      case "http": {
+        const isZip = component?.artifact?.type === "zip" ||
+          Boolean(component?.artifact?.unzip) ||
+          source.url.toLowerCase().endsWith(".zip");
+        const label = isZip ? "http(zip)" : "http";
+        return `${label} ${source.url}`;
+      }
+    }
+  }
+
+  const fallback = fallbackLocalPath(type, name);
+  if (fallback) return `local ${fallback}`;
+  return "unknown source";
+};
+
+const loadPropertiesComponents = async () => {
+  try {
+    const yaml = await Deno.readTextFile("./crtb.properties.yml");
+    const manager = PropertiesManager.fromYaml(yaml);
+    return manager.properties.components;
+  } catch (error) {
+    console.warn(
+      "Failed to load crtb.properties.yml. Falling back to filesystem-only listing.",
+      error,
+    );
+    return undefined;
+  }
+};
+
+const renderComponentInventory = async () => {
+  const components = await loadPropertiesComponents();
+  const propertyMap = new Map<ComponentIDString, IComponent>();
+  const register = (component?: IComponent) => {
+    if (!component) return;
+    try {
+      propertyMap.set(component.toIDString(), component);
+    } catch (error) {
+      console.warn(`Failed to register component ${component.name}:`, error);
+    }
+  };
+
+  register(components?.world);
+  components?.datapacks?.forEach(register);
+  components?.plugins?.forEach(register);
+  components?.resourcepacks?.forEach(register);
+  components?.mods?.forEach(register);
+
+  let discoveredIds: ComponentIDString[] = [];
+  try {
+    discoveredIds = await readComponents("./components");
+  } catch (error) {
+    console.warn("Failed to scan ./components directory:", error);
+  }
+
+  const combinedIds = new Set<ComponentIDString>();
+  discoveredIds.forEach((id) => combinedIds.add(id));
+  propertyMap.forEach((_component, id) => combinedIds.add(id));
+  if (propertyMap.has("world" as ComponentIDString)) {
+    combinedIds.add("world");
+  }
+
+  const groups = COMPONENT_GROUPS.map((group) => ({
+    ...group,
+    entries: [] as ComponentListEntry[],
+  }));
+  const groupLookup = new Map<ComponentIDType, (typeof groups)[number]>();
+  for (const group of groups) {
+    groupLookup.set(group.type, group);
+  }
+
+  for (const id of combinedIds) {
+    if (!id) continue;
+    let parsed;
+    try {
+      parsed = ComponentIDString.split(id);
+    } catch (error) {
+      console.warn(`Skipping unknown component id "${id}":`, error);
+      continue;
+    }
+    const group = groupLookup.get(parsed.type);
+    if (!group) continue;
+    const entry: ComponentListEntry = {
+      id,
+      type: parsed.type,
+      name: parsed.name ?? "world",
+      component: propertyMap.get(id),
+      registered: propertyMap.has(id),
+    };
+    group.entries.push(entry);
+  }
+
+  const anyRegistered = groups.some((group) => group.entries.length > 0);
+  groups.forEach((group, index) => {
+    if (!group.entries.length) {
+      console.log(`${group.label}: (none)`);
+    } else {
+      group.entries.sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+      );
+      const nameWidth = group.entries.reduce(
+        (width, entry) => Math.max(width, entry.name.length),
+        0,
+      );
+      console.log(`${group.label}:`);
+      for (const entry of group.entries) {
+        const summary = formatSourceSummary(
+          entry.component,
+          entry.type,
+          entry.name,
+        );
+        const suffix = entry.registered ? "" : "  (unregistered)";
+        console.log(`  - ${entry.name.padEnd(nameWidth)}  ${summary}${suffix}`);
+      }
+    }
+    if (index < groups.length - 1) console.log("");
+  });
+
+  if (!anyRegistered && combinedIds.size === 0) {
+    console.log(
+      "No components detected. Add entries under ./components or register them in crtb.properties.yml.",
+    );
+  }
+};
+
 const cmd: Command = {
   name: "components",
   description: "Show components information",
@@ -738,9 +913,7 @@ const cmd: Command = {
     {
       name: "list",
       description: "List all components",
-      handler: async () => {
-        console.log(await readComponents("./components"));
-      },
+      handler: renderComponentInventory,
     },
     {
       name: "update",
@@ -818,8 +991,8 @@ const cmd: Command = {
       },
     },
   ],
-  handler: async (args: string[]) => {
-    console.log(await readComponents("./components"));
+  handler: async () => {
+    await renderComponentInventory();
   },
 };
 
