@@ -1,6 +1,8 @@
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import { resolveServiceSelection, serviceToContainer } from "../services.ts";
+import { attachContainerConsole } from "../terminal/docker.ts";
+import { getComposeServiceStatus } from "../docker-compose-status.ts";
 
 const cmd: Command = {
   name: "terminal",
@@ -29,18 +31,15 @@ const cmd: Command = {
       return;
     }
 
-    console.log(`Attaching to ${container}. Press CTRL-p CTRL-q to detach.`);
-    const dockercmd = new Deno.Command("docker", {
-      args: ["attach", container],
-    });
-    const process = dockercmd.spawn({
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
+    const status = await getComposeServiceStatus(service);
+    if (!status || status.State !== "running") {
+      console.log(
+        `${service} is not running. Start it before attaching (try \`crtb server start\`).`,
+      );
+      return;
+    }
 
-    await process.status;
-    console.log("Detached from container.");
+    await attachContainerConsole(container, { title: service });
   },
 };
 

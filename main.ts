@@ -100,6 +100,7 @@ const runInteractiveMenu = async () => {
         `"${chosenCommand.name}" の実行中にエラーが発生しました: ${error}`,
       );
     }
+    exitRequested = true;
   }
 
   outro("Crafter's Toolbox を終了します。");

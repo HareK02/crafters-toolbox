@@ -2,6 +2,7 @@ import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import { getComposeEnv } from "../docker-env.ts";
 import { getComposeServiceStatus } from "../docker-compose-status.ts";
+import { attachContainerConsole } from "../terminal/docker.ts";
 
 const GAME_SERVICE = "game-server";
 
@@ -46,7 +47,7 @@ const serverCommand: Command = {
     {
       name: "start",
       description:
-        "Start the game server container in detached mode (use --build to rebuild)",
+        "Start the game server container in detached mode, then attach its console (use --build to rebuild)",
       handler: async (args: string[]) => {
         if (!(await dockerTest())) return;
         const { build, unknown } = parseBuildFlag(args);
@@ -66,7 +67,8 @@ const serverCommand: Command = {
             build ? " with rebuild" : ""
           }...`,
         );
-        await runCompose(composeArgs);
+        const started = await runCompose(composeArgs);
+        if (started) await maybeAttachGameConsole();
       },
     },
     {
@@ -98,6 +100,25 @@ const serverCommand: Command = {
     if (!(await dockerTest())) return;
     await showStatusMessage();
   },
+};
+
+const maybeAttachGameConsole = async () => {
+  const interactive = Deno.isatty(Deno.stdin.rid) &&
+    Deno.isatty(Deno.stdout.rid);
+  if (!interactive) {
+    console.log(
+      "game-server is running in detached mode. Use `crtb terminal game` to attach.",
+    );
+    return;
+  }
+
+  try {
+    await attachContainerConsole("crafters-toolbox-game", {
+      title: "game-server",
+    });
+  } catch (error) {
+    console.error("Failed to attach to game-server console:", error);
+  }
 };
 
 export default serverCommand;

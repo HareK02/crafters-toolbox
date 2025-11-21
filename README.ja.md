@@ -2,10 +2,16 @@
 
 CRTB is a tool for Minecraft:Java Edition that helps you create and manage your projects.
 
-## Description
-
 クラフターズツールボックスは、Minecraft の様々な制作を支援する外部ツールです。
 本ツールは、MOD やデータパックの開発を支援するために設計されています。
+
+## How to Use
+
+任意のシェル上で、denoを用いたインタラクティブCLIとして利用できます。
+
+```bash
+deno run crtb
+```
 
 ## Features
 
