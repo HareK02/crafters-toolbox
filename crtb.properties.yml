@@ -12,7 +12,7 @@ components:
     mcdb:
       source:
         type: git
-        url: "git@gitea.hareworks.net:Hare/simply-minecraft-db.git"
+        url: 'git@gitea.hareworks.net:Hare/simply-minecraft-db.git'
       build:
         type: gradle
         task: shadowJar

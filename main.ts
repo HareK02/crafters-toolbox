@@ -36,7 +36,9 @@ const runCommand = async (command: Command, args: string[]) => {
 };
 
 const promptForSubcommand = async (command: Command) => {
-  if (!command.subcommands || command.subcommands.length === 0) return null;
+  if (!command.subcommands || command.subcommands.length === 0) {
+    return undefined;
+  }
   const choice = await select({
     message: `${command.name} のサブコマンドを選択`,
     options: [
@@ -86,14 +88,19 @@ const runInteractiveMenu = async () => {
 
     log.info(`${command.name}: ${command.description}`);
 
-    const chosenCommand = (await promptForSubcommand(command)) ?? command;
-    if (chosenCommand === command && command.subcommands?.length) {
-      // user backed out of subcommand selection
-      if (command.subcommands.length) continue;
+    const subcommand = await promptForSubcommand(command);
+    if (subcommand === null) {
+      // User canceled subcommand selection
+      continue;
     }
+    const chosenCommand = subcommand ?? command;
 
     try {
-      await chosenCommand.handler([]);
+      if (chosenCommand.interactiveHandler) {
+        await chosenCommand.interactiveHandler();
+      } else {
+        await chosenCommand.handler([]);
+      }
       log.success(`"${chosenCommand.name}" を実行しました。`);
     } catch (error) {
       log.error(

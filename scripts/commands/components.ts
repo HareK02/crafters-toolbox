@@ -586,7 +586,10 @@ const pickArtifactFile = async (
   return files.length === 1 ? join(basePath, files[0]) : undefined;
 };
 
-const applyComponents = async (properties: PropertiesManager) => {
+const applyComponents = async (
+  properties: PropertiesManager,
+  selected?: Set<ComponentIDString>,
+) => {
   const serverType = properties.properties.server?.type;
   if (!serverType) {
     warn("server.type is not defined, cannot deploy components.");
@@ -611,7 +614,15 @@ const applyComponents = async (properties: PropertiesManager) => {
   const pluginsDir = join(GAME_SERVER_ROOT, "plugins");
   const modsDir = join(GAME_SERVER_ROOT, "mods");
 
-  const tasks = properties.getComponentsAsArray().map(async (component) => {
+  const components = properties.getComponentsAsArray().filter((component) =>
+    selected ? selected.has(toComponentId(component)) : true
+  );
+  if (components.length === 0) {
+    info("No components matched the selected filters.");
+    return;
+  }
+
+  const tasks = components.map(async (component) => {
     status.start(component.name, "resolving");
     try {
       const localPromise = component.kind === ComponentIDType.WORLD
@@ -906,6 +917,220 @@ const renderComponentInventory = async () => {
   }
 };
 
+const COMPONENT_TOKEN_ALIASES: Record<string, ComponentIDType> = {
+  world: ComponentIDType.WORLD,
+  w: ComponentIDType.WORLD,
+  dp: ComponentIDType.DATAPACKS,
+  datapack: ComponentIDType.DATAPACKS,
+  datapacks: ComponentIDType.DATAPACKS,
+  pl: ComponentIDType.PLUGINS,
+  plugin: ComponentIDType.PLUGINS,
+  plugins: ComponentIDType.PLUGINS,
+  rp: ComponentIDType.RESOURCEPACKS,
+  resourcepack: ComponentIDType.RESOURCEPACKS,
+  resourcepacks: ComponentIDType.RESOURCEPACKS,
+  mod: ComponentIDType.MODS,
+  mods: ComponentIDType.MODS,
+};
+
+const resolveTypeAlias = (token: string): ComponentIDType | undefined => {
+  return COMPONENT_TOKEN_ALIASES[token.toLowerCase()];
+};
+
+const parseComponentSelectorToken = (
+  token: string,
+): ComponentIDString | null => {
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+  if (trimmed === "world") return "world";
+  const [typeToken, name] = trimmed.split(":", 2);
+  if (!name) {
+    console.error(
+      `Invalid component selector "${token}". Use <type>:<name> (e.g., dp:example).`,
+    );
+    return null;
+  }
+  const type = resolveTypeAlias(typeToken);
+  if (!type) {
+    console.error(
+      `Unknown component type "${typeToken}" in selector "${token}".`,
+    );
+    return null;
+  }
+  if (type === ComponentIDType.WORLD) {
+    console.error(
+      'World component selectors should be specified simply as "world" without a name.',
+    );
+    return null;
+  }
+  const short = ComponentIDType.toShortString(type);
+  return `${short}:${name}` as ComponentIDString;
+};
+
+const parseComponentArgs = (
+  tokens: string[],
+): ComponentIDString[] | null | undefined => {
+  if (tokens.length === 0) return undefined;
+  const parsed: ComponentIDString[] = [];
+  let hasError = false;
+  for (const token of tokens) {
+    const result = parseComponentSelectorToken(token);
+    if (result) parsed.push(result);
+    else hasError = true;
+  }
+  if (hasError) return null;
+  return parsed;
+};
+
+const promptComponentsForUpdate = async (): Promise<
+  ComponentIDString[] | undefined
+> => {
+  try {
+    const yaml = await Deno.readTextFile("./crtb.properties.yml");
+    const manager = PropertiesManager.fromYaml(yaml);
+    const defined = manager.getComponentsAsArray();
+    if (!defined.length) {
+      console.log("crtb.properties.yml に定義済みコンポーネントがありません。");
+      return undefined;
+    }
+    const options = defined.map((component) => {
+      const id = toComponentId(component);
+      const groupLabel = COMPONENT_GROUPS.find((g) => g.type === component.kind)
+        ?.label ?? component.kind;
+      const summary = formatSourceSummary(
+        component,
+        component.kind,
+        component.name,
+      );
+      const label = component.kind === ComponentIDType.WORLD
+        ? "world"
+        : component.name;
+      return {
+        value: id,
+        label: `${label} (${groupLabel})`,
+        hint: summary,
+      };
+    });
+    const prompts = await import("npm:@clack/prompts");
+    const selection = await prompts.multiselect({
+      message:
+        "更新するコンポーネントを選択してください (Space で選択, Enter で確定)",
+      options,
+      required: true,
+    });
+    if (prompts.isCancel(selection) || !Array.isArray(selection)) {
+      console.log("コンポーネントの選択をキャンセルしました。");
+      return undefined;
+    }
+    if (selection.length === 0) {
+      console.log("コンポーネントが選択されていません。");
+      return undefined;
+    }
+    return selection as ComponentIDString[];
+  } catch (error) {
+    console.error("Failed to load components for selection:", error);
+    return undefined;
+  }
+};
+
+const runComponentsUpdate = async (
+  args: string[],
+  preselected?: ComponentIDString[],
+) => {
+  const selectionFromArgs = preselected?.length
+    ? preselected
+    : parseComponentArgs(args);
+  if (selectionFromArgs === null) return;
+
+  try {
+    const properties = PropertiesManager.fromYaml(
+      Deno.readTextFileSync("./crtb.properties.yml"),
+    );
+    const currentComponents = await readComponents("./components");
+
+    const unregisteredComponents = currentComponents.filter((component) => {
+      return !properties
+        .getComponentsAsArray()
+        .some((rc) => toComponentId(rc) === component);
+    });
+
+    for (const component_id_str of unregisteredComponents) {
+      const { type, name } = ComponentIDString.split(component_id_str);
+      if (name === undefined && type !== ComponentIDType.WORLD) {
+        console.warn(`Component ${component_id_str} has no name, skipping`);
+        continue;
+      }
+      const localPath = `./components/${type}s/${name}`;
+      const ref = new LocalRef(localPath);
+      const baseOptions = {
+        source: { type: "local", path: localPath } as SourceConfig,
+      };
+      const component = properties.properties.components;
+      switch (type) {
+        case ComponentIDType.WORLD:
+          component.world = new World(ref, baseOptions);
+          break;
+        case ComponentIDType.DATAPACKS:
+          if (component.datapacks === undefined) component.datapacks = [];
+          component.datapacks.push(new Datapack(name!, ref, baseOptions));
+          break;
+        case ComponentIDType.PLUGINS:
+          if (component.plugins === undefined) component.plugins = [];
+          component.plugins.push(new Plugin(name!, ref, baseOptions));
+          break;
+        case ComponentIDType.RESOURCEPACKS:
+          if (component.resourcepacks === undefined) {
+            component.resourcepacks = [];
+          }
+          component.resourcepacks.push(
+            new Resourcepack(name!, ref, baseOptions),
+          );
+          break;
+        case ComponentIDType.MODS:
+          if (component.mods === undefined) component.mods = [];
+          component.mods.push(new Mod(name!, ref, baseOptions));
+          break;
+        default:
+          console.warn(`Unknown component type: ${type}. Skipping ${name}`);
+          continue;
+      }
+    }
+
+    Deno.writeTextFileSync("./crtb.properties.yml", properties.toYaml());
+
+    let selectedSet: Set<ComponentIDString> | undefined;
+    if (selectionFromArgs && selectionFromArgs.length) {
+      const availableIds = new Set(
+        properties.getComponentsAsArray().map((component) =>
+          toComponentId(component)
+        ),
+      );
+      const matched: ComponentIDString[] = [];
+      const missing: ComponentIDString[] = [];
+      for (const id of selectionFromArgs) {
+        if (availableIds.has(id)) matched.push(id);
+        else missing.push(id);
+      }
+      if (missing.length) {
+        console.warn(
+          `The following components are not registered and were skipped: ${
+            missing.join(", ")
+          }`,
+        );
+      }
+      if (!matched.length) {
+        console.error("指定されたコンポーネントが存在しません。");
+        return;
+      }
+      selectedSet = new Set(matched);
+    }
+
+    await applyComponents(properties, selectedSet);
+  } catch (e) {
+    console.error("Error reading components:", e);
+  }
+};
+
 const cmd: Command = {
   name: "components",
   description: "Show components information",
@@ -917,77 +1142,20 @@ const cmd: Command = {
     },
     {
       name: "update",
-      description: "Update components",
-      handler: async () => {
-        try {
-          const properties = PropertiesManager.fromYaml(
-            Deno.readTextFileSync("./crtb.properties.yml"),
+      description:
+        "Update components (optionally pass selectors like dp:example to limit scope)",
+      handler: async (args: string[]) => {
+        await runComponentsUpdate(args);
+      },
+      interactiveHandler: async () => {
+        const selection = await promptComponentsForUpdate();
+        if (!selection || selection.length === 0) {
+          console.log(
+            "コンポーネントが選択されていないため、更新を中止しました。",
           );
-          const currentComponents = await readComponents("./components");
-
-          // register unregistered components
-          const unregisteredComponents = currentComponents.filter(
-            (component) => {
-              return !properties
-                .getComponentsAsArray()
-                .some(
-                  (rc) => toComponentId(rc) === component,
-                );
-            },
-          );
-
-          for (const component_id_str of unregisteredComponents) {
-            const { type, name } = ComponentIDString.split(component_id_str);
-            if (name === undefined && type !== ComponentIDType.WORLD) {
-              console.warn(
-                `Component ${component_id_str} has no name, skipping`,
-              );
-              continue;
-            }
-            const localPath = `./components/${type}s/${name}`;
-            const ref = new LocalRef(localPath);
-            const baseOptions = {
-              source: { type: "local", path: localPath } as SourceConfig,
-            };
-            const component = properties.properties.components;
-            switch (type) {
-              case ComponentIDType.WORLD:
-                component.world = new World(ref, baseOptions);
-                break;
-              case ComponentIDType.DATAPACKS:
-                if (component.datapacks === undefined) component.datapacks = [];
-                component.datapacks.push(new Datapack(name!, ref, baseOptions));
-                break;
-              case ComponentIDType.PLUGINS:
-                if (component.plugins === undefined) component.plugins = [];
-                component.plugins.push(new Plugin(name!, ref, baseOptions));
-                break;
-              case ComponentIDType.RESOURCEPACKS:
-                if (component.resourcepacks === undefined) {
-                  component.resourcepacks = [];
-                }
-                component.resourcepacks.push(
-                  new Resourcepack(name!, ref, baseOptions),
-                );
-                break;
-              case ComponentIDType.MODS:
-                if (component.mods === undefined) component.mods = [];
-                component.mods.push(new Mod(name!, ref, baseOptions));
-                break;
-              default:
-                console.warn(
-                  `Unknown component type: ${type}. Skipping ${name}`,
-                );
-                continue;
-            }
-          }
-
-          // write property
-          Deno.writeTextFileSync("./crtb.properties.yml", properties.toYaml());
-          await applyComponents(properties);
-        } catch (e) {
-          console.error("Error reading components:", e);
+          return;
         }
+        await runComponentsUpdate([], selection);
       },
     },
   ],

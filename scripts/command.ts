@@ -4,6 +4,7 @@ export type Command = {
   description: string;
   subcommands?: Command[];
   handler: (args: string[]) => void | Promise<void>;
+  interactiveHandler?: () => void | Promise<void>;
 };
 
 import help from "./commands/help.ts";
