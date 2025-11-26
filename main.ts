@@ -101,7 +101,6 @@ const runInteractiveMenu = async () => {
       } else {
         await chosenCommand.handler([]);
       }
-      log.success(`"${chosenCommand.name}" を実行しました。`);
     } catch (error) {
       log.error(
         `"${chosenCommand.name}" の実行中にエラーが発生しました: ${error}`,
@@ -109,8 +108,6 @@ const runInteractiveMenu = async () => {
     }
     exitRequested = true;
   }
-
-  outro("Crafter's Toolbox を終了します。");
 };
 
 const args = Deno.args;

@@ -1,28 +1,73 @@
 # Crafter's Toolbox
 
-CRTB is a tool for Minecraft:Java Edition that helps you create and manage your projects.
+CRTB は Minecraft: Java Edition
+の制作物（サーバー、プラグイン、データパック等）を一括で管理するためのツールチェーンです。Deno
+製 CLI と Docker コンテナを組み合わせ、ワンコマンドでビルド／デプロイ／SSH
+共有を行えます。
 
-クラフターズツールボックスは、Minecraft の様々な制作を支援する外部ツールです。
-本ツールは、MOD やデータパックの開発を支援するために設計されています。
+## 特徴
 
-## How to Use
+- `components/` に置いた制作物を `crtb.properties.yml`
+  の定義に従って自動ビルド・配置
+- ゲームサーバー、SSH サーバー、監視（WIP）の 3 コンテナ構成
+- コマンドライン／インタラクティブ UI どちらでも操作可能
+- ホスト UID/GID をコンテナに反映し、ファイルパーミッションを安全に維持
 
-任意のシェル上で、denoを用いたインタラクティブCLIとして利用できます。
+## クイックスタート
 
-```bash
-deno run crtb
+1. 依存ツールを用意
+   - [Deno 1.41+](https://deno.land/) / [Docker](https://www.docker.com/) /
+     [Git](https://git-scm.com/)
+2. リポジトリを取得し設定する
+   ```bash
+   git clone <repo>
+   cd crafters-toolbox
+   $EDITOR crtb.properties.yml  # サーバー種別やコンポーネントを調整
+   deno run -A main.ts setup     # server.jar を取得
+   ```
+3. CLI を起動
+   ```bash
+   deno run -A main.ts           # インタラクティブメニュー
+   # または
+   deno run -A main.ts server start --build
+   ```
+
+## 主なコマンド
+
+## | コマンド | 説明 | | ---------------------------------- |
+
+| --------- | ------------------------------ | | `server start/stop/restart` |
+Minecraft サーバー用コンテナを制御。`start` 後は自動で `docker attach`
+し、Ctrl+C でデタッチのみ行う | | `ssh up/down` / `ssh` | 協調作業用 SSH
+サーバーを起動／停止／状態確認。鍵は `components/.ssh/authorized_keys` に配置 |
+| `components list` | `crtb.properties.yml` と `components/`
+ディレクトリを突き合わせた一覧表示 | | `components update [selector ...]` |
+指定コンポーネントのみ、あるいは全件を取得→ビルド→`server/` に配置 | |
+`terminal [game                    | ssh                                                                                                  | monitor]`
+| 稼働中コンテナへ安全にアタッチ | | `setup` | `server.jar` をダウンロード | |
+`monitor` | 監視コンテナ用の将来機能（現状は未実装のスタブ） |
+
+詳細な使い方は下記ドキュメントを参照してください。
+
+## ドキュメント
+
+- [利用ガイド (docs/ja/usage.md)](docs/ja/usage.md)
+- [開発者向けドキュメント (docs/ja/development.md)](docs/ja/development.md)
+
+## ディレクトリ構成（抜粋）
+
+```
+├── server/                # 稼働中サーバーデータ
+├── components/            # ソース (datapacks/plugins/mods/resourcepacks)
+├── scripts/               # Deno CLI コマンド群
+├── docker/                # 共通 Docker イメージとエントリーポイント
+├── crtb.properties.yml    # プロジェクト固有設定
+├── crtb.config.yml        # ランタイム既定値
+└── docs/ja/               # 日本語ドキュメント
 ```
 
-## Features
-
-- サーバーの自動構築
-- プラグイン・Modの自動ビルド・デプロイ
-- 制作物のバージョン管理
-- コラボレーション用の ssh サーバー
-- バックアップアーカイブの作成
-
-## Dependencies
+## 依存ソフトウェア
 
 - [Git](https://git-scm.com/)
 - [Deno](https://deno.land/)
-- [Docker](https://www.docker.com/).
+- [Docker](https://www.docker.com/)

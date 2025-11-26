@@ -1,10 +1,12 @@
+import { isTerminal } from "./tty.ts";
+
 const encoder = new TextEncoder();
 const CLEAR_LINE = "\x1b[2K\r";
 
 export class TerminalDisplay {
   private statusText = "";
   private statusVisible = false;
-  private readonly tty = Deno.isatty(Deno.stdout.rid);
+  private readonly tty = isTerminal(Deno.stdout);
 
   info(message: string) {
     this.writeLine(message);

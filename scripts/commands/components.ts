@@ -21,11 +21,11 @@ import { readComponents } from "../components_reader.ts";
 import { getJavaImage, loadConfig } from "../config.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
 import { LocalRef } from "../reference.ts";
+import { isTerminal } from "../terminal/tty.ts";
 
-const GAME_SERVER_ROOT = "./.app/gameserver";
+const GAME_SERVER_ROOT = "./server";
 const CACHE_ROOT = "./.cache/components";
-const PREFIX = "[components:update]";
-const IS_TTY = Deno.isatty(Deno.stdout.rid);
+const IS_TTY = isTerminal(Deno.stdout);
 
 type DeployConfig = {
   worldContainer: "root" | "worlds";
@@ -75,7 +75,7 @@ let currentStatus: ReturnType<typeof createStatusManager> | undefined;
 
 const safeLog = (message: string, isError = false) => {
   logUpdate.clear();
-  (isError ? console.error : console.log)(`${PREFIX} ${message}`);
+  (isError ? console.error : console.log)(message);
   currentStatus?.render();
 };
 const warn = (message: string) => safeLog(message, true);
@@ -88,27 +88,43 @@ type SpinnerState = {
   frame: number;
 };
 
-const createStatusManager = () => {
+const createStatusManager = (totalCount: number) => {
   const spinner = cliSpinners.dots;
   const states = new Map<string, SpinnerState>();
+  const order: string[] = [];
   let timer: number | undefined;
+  let lastRender: string | undefined;
 
   const render = () => {
     if (!IS_TTY) return;
-    const entries = [...states.entries()];
-    const maxName = entries.reduce((m, [name]) => Math.max(m, name.length), 0);
-    const lines = entries.map(([name, s]) => {
-      const icon = s.state === "running"
-        ? spinner.frames[s.frame % spinner.frames.length]
-        : s.state === "succeed"
+    const names = order;
+    const maxName = names.reduce((m, name) => Math.max(m, name.length), 0);
+    const completed = names.filter((name) => {
+      const state = states.get(name);
+      return state?.state === "succeed";
+    }).length;
+
+    const lines: string[] = [`Processing... [${completed}/${totalCount}]`];
+    names.forEach((name) => {
+      const state = states.get(name);
+      if (!state) return;
+      const icon = state.state === "running"
+        ? spinner.frames[state.frame % spinner.frames.length]
+        : state.state === "succeed"
         ? "✓"
         : "✗";
-      const padded = name.padEnd(maxName, " ");
-      return `${PREFIX} ${padded} [${s.phase.padEnd(12)} ${icon}]${
-        s.message ? ` ${s.message}` : ""
-      }`;
+      const label = `${name.padEnd(maxName)} [${
+        state.phase.padEnd(
+          10,
+        )
+      } ${icon}]`;
+      lines.push(`  ${label}`);
     });
-    logUpdate(`${PREFIX} Components Status\n${lines.join("\n")}`);
+
+    const output = lines.join("\n");
+    if (output === lastRender) return;
+    lastRender = output;
+    logUpdate(output);
   };
 
   const tick = () => {
@@ -137,29 +153,30 @@ const createStatusManager = () => {
 
   return {
     start: (name: string, phase: string, message?: string) => {
+      states.set(name, { phase, message, state: "running", frame: 0 });
+      if (!order.includes(name)) order.push(name);
       if (!IS_TTY) {
-        console.log(`${PREFIX} ${name} [${phase}] ${message ?? ""}`);
+        console.log(`${name} [${phase}] ${message ?? ""}`);
         return;
       }
-      states.set(name, { phase, message, state: "running", frame: 0 });
       ensureTimer();
       tick();
     },
     update: (name: string, phase: string, message?: string) => {
-      if (!IS_TTY) {
-        console.log(`${PREFIX} ${name} [${phase}] ${message ?? ""}`);
-        return;
-      }
       const s = states.get(name) ?? { phase, state: "running", frame: 0 };
       s.phase = phase;
       s.message = message;
       s.state = "running";
       states.set(name, s);
+      if (!IS_TTY) {
+        console.log(`${name} [${phase}] ${message ?? ""}`);
+        return;
+      }
       tick();
     },
     succeed: (name: string, message?: string) => {
       if (!IS_TTY) {
-        console.log(`${PREFIX} ${name} [done] ${message ?? ""}`);
+        console.log(`${name} [done] ${message ?? ""}`);
         return;
       }
       const s = states.get(name);
@@ -172,7 +189,7 @@ const createStatusManager = () => {
     },
     fail: (name: string, message?: string) => {
       if (!IS_TTY) {
-        console.error(`${PREFIX} ${name} [fail] ${message ?? ""}`);
+        console.error(`${name} [fail] ${message ?? ""}`);
         return;
       }
       const s = states.get(name);
@@ -189,6 +206,7 @@ const createStatusManager = () => {
       if (timer !== undefined) clearInterval(timer as number);
       timer = undefined;
       render();
+      lastRender = undefined;
       logUpdate.done();
     },
   };
@@ -284,15 +302,15 @@ const copyToDir = async (
 ) => {
   const targetPath = join(destDir, componentName ?? basename(srcPath));
   const normalizedSrc = await Deno.realPath(srcPath).catch(() => srcPath);
-  const normalizedDest = await Deno.realPath(targetPath).catch(() =>
-    targetPath
+  const normalizedDest = await Deno.realPath(targetPath).catch(
+    () => targetPath,
   );
   if (normalizedSrc === normalizedDest) return;
 
   const stat = await Deno.stat(srcPath);
   await Deno.mkdir(destDir, { recursive: true });
   const targetName = stat.isDirectory
-    ? componentName ?? basename(srcPath)
+    ? (componentName ?? basename(srcPath))
     : basename(srcPath);
   const dest = join(destDir, targetName);
   await copy(srcPath, dest, { overwrite: true });
@@ -360,14 +378,7 @@ const ensureLocalPresence = async (
     const gitDir = join(CACHE_ROOT, "git", component.name);
     await Deno.mkdir(gitDir, { recursive: true });
     const repoDir = join(gitDir, "repo");
-    const cloneArgs = [
-      "git",
-      "clone",
-      "--depth",
-      "1",
-      source.url,
-      repoDir,
-    ];
+    const cloneArgs = ["git", "clone", "--depth", "1", source.url, repoDir];
     const updateArgs = ["git", "-C", repoDir, "pull", "--ff-only"];
     const checkoutArgs = source.commit
       ? ["git", "-C", repoDir, "checkout", source.commit]
@@ -375,7 +386,9 @@ const ensureLocalPresence = async (
       ? ["git", "-C", repoDir, "checkout", source.branch]
       : undefined;
 
-    const exists = await Deno.stat(repoDir).then(() => true).catch(() => false);
+    const exists = await Deno.stat(repoDir)
+      .then(() => true)
+      .catch(() => false);
     const cmd = new Deno.Command("bash", {
       args: ["-lc", exists ? updateArgs.join(" ") : cloneArgs.join(" ")],
       stdout: "inherit",
@@ -465,14 +478,19 @@ const runBuild = async (
     case "gradle": {
       const task = build.task ?? "build";
       const gradlew = join(absWorkdir, "gradlew");
-      const useGradlew = await Deno.stat(gradlew).then(() => true).catch(() =>
-        false
-      );
-      const gradleCmd = useGradlew ? `./gradlew ${task}` : `gradle ${task}`;
+      const useGradlew = await Deno.stat(gradlew)
+        .then(() => true)
+        .catch(() => false);
+      const baseCmd = useGradlew ? `./gradlew` : `gradle`;
+      const gradleCmd = `${baseCmd} ${task} --console=plain`;
       const dockerCmd = new Deno.Command("docker", {
         args: [
           "run",
           "--rm",
+          "-e",
+          "CI=1",
+          "-e",
+          "TERM=dumb",
           "-v",
           `${absWorkdir}:${absWorkdir}`,
           "-w",
@@ -503,6 +521,10 @@ const runBuild = async (
         args: [
           "run",
           "--rm",
+          "-e",
+          "CI=1",
+          "-e",
+          "TERM=dumb",
           "-v",
           `${base}:${base}`,
           "-w",
@@ -602,7 +624,17 @@ const applyComponents = async (
     return;
   }
 
-  const status = createStatusManager();
+  const components = properties
+    .getComponentsAsArray()
+    .filter((component) =>
+      selected ? selected.has(toComponentId(component)) : true
+    );
+  if (components.length === 0) {
+    info("No components matched the selected filters.");
+    return;
+  }
+
+  const status = createStatusManager(components.length);
   currentStatus = status;
   const config = loadConfig();
   const runnerImage = getJavaImage(config);
@@ -613,14 +645,6 @@ const applyComponents = async (
   const resourcepacksDir = join(GAME_SERVER_ROOT, "resourcepacks");
   const pluginsDir = join(GAME_SERVER_ROOT, "plugins");
   const modsDir = join(GAME_SERVER_ROOT, "mods");
-
-  const components = properties.getComponentsAsArray().filter((component) =>
-    selected ? selected.has(toComponentId(component)) : true
-  );
-  if (components.length === 0) {
-    info("No components matched the selected filters.");
-    return;
-  }
 
   const tasks = components.map(async (component) => {
     status.start(component.name, "resolving");
@@ -660,9 +684,9 @@ const applyComponents = async (
         buildOutput,
       );
 
-      const exists = await Deno.stat(artifactPath).then(() => true).catch(() =>
-        false
-      );
+      const exists = await Deno.stat(artifactPath)
+        .then(() => true)
+        .catch(() => false);
       if (!exists) {
         status.fail(component.name, `artifact missing: ${artifactPath}`);
         return;
@@ -670,7 +694,9 @@ const applyComponents = async (
       let finalArtifactPath = artifactPath;
       const stat = await Deno.stat(artifactPath);
       if (
-        stat.isDirectory && artifact.type !== "dir" && artifact.type !== "raw"
+        stat.isDirectory &&
+        artifact.type !== "dir" &&
+        artifact.type !== "raw"
       ) {
         const exts = artifact.type === "jar"
           ? [".jar"]
@@ -995,8 +1021,10 @@ const promptComponentsForUpdate = async (): Promise<
     }
     const options = defined.map((component) => {
       const id = toComponentId(component);
-      const groupLabel = COMPONENT_GROUPS.find((g) => g.type === component.kind)
-        ?.label ?? component.kind;
+      const groupLabel = COMPONENT_GROUPS.find((g) =>
+        g.type === component.kind
+      )?.label ??
+        component.kind;
       const summary = formatSourceSummary(
         component,
         component.kind,
@@ -1101,9 +1129,9 @@ const runComponentsUpdate = async (
     let selectedSet: Set<ComponentIDString> | undefined;
     if (selectionFromArgs && selectionFromArgs.length) {
       const availableIds = new Set(
-        properties.getComponentsAsArray().map((component) =>
-          toComponentId(component)
-        ),
+        properties
+          .getComponentsAsArray()
+          .map((component) => toComponentId(component)),
       );
       const matched: ComponentIDString[] = [];
       const missing: ComponentIDString[] = [];
@@ -1114,7 +1142,9 @@ const runComponentsUpdate = async (
       if (missing.length) {
         console.warn(
           `The following components are not registered and were skipped: ${
-            missing.join(", ")
+            missing.join(
+              ", ",
+            )
           }`,
         );
       }

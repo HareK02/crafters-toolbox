@@ -24,24 +24,3 @@ components:
       source:
         type: local
         path: ./components/resourcepacks/hoge
-# exports:
-#   release:
-#     world:
-#       enable: true
-#       list_type: include
-#       list:
-#         - 'dp:my_datapack'
-#         - 'rp:my_resourcepack'
-#     server:
-#       enable: true
-#       server:
-#         type: paper
-#         version: 1.20.2
-#       list_type: exclude
-#       list:
-#         - 'pl:worldedit'
-#     client:
-#       enable: true
-#       list:
-#         - 'mod:my_mod'
-#         - 'rp:my_resourcepack'

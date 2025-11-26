@@ -10,8 +10,11 @@ async function runCompose(args: string[]) {
   const command = new Deno.Command("docker", {
     args: composeArgs,
     env: getComposeEnv(),
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
   });
-  const process = command.spawn({ stdout: "inherit", stderr: "inherit" });
+  const process = command.spawn();
   const status = await process.status;
   if (!status.success) {
     console.error("docker compose command failed");

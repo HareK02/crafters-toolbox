@@ -2,7 +2,8 @@ import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import { getComposeEnv } from "../docker-env.ts";
 import { getComposeServiceStatus } from "../docker-compose-status.ts";
-import { attachContainerConsole } from "../terminal/docker.ts";
+import { attachServiceConsole } from "../terminal/service-console.ts";
+import { isTerminal } from "../terminal/tty.ts";
 
 const GAME_SERVICE = "game-server";
 
@@ -11,8 +12,11 @@ async function runCompose(args: string[]) {
   const command = new Deno.Command("docker", {
     args: composeArgs,
     env: getComposeEnv(),
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
   });
-  const process = command.spawn({ stdout: "inherit", stderr: "inherit" });
+  const process = command.spawn();
   const status = await process.status;
   if (!status.success) {
     console.error("docker compose command failed");
@@ -103,8 +107,7 @@ const serverCommand: Command = {
 };
 
 const maybeAttachGameConsole = async () => {
-  const interactive = Deno.isatty(Deno.stdin.rid) &&
-    Deno.isatty(Deno.stdout.rid);
+  const interactive = isTerminal(Deno.stdin) && isTerminal(Deno.stdout);
   if (!interactive) {
     console.log(
       "game-server is running in detached mode. Use `crtb terminal game` to attach.",
@@ -113,9 +116,7 @@ const maybeAttachGameConsole = async () => {
   }
 
   try {
-    await attachContainerConsole("crafters-toolbox-game", {
-      title: "game-server",
-    });
+    await attachServiceConsole(GAME_SERVICE, { title: "game-server" });
   } catch (error) {
     console.error("Failed to attach to game-server console:", error);
   }
