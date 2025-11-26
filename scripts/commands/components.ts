@@ -19,13 +19,31 @@ import {
 } from "../component.ts";
 import { readComponents } from "../components_reader.ts";
 import { getJavaImage, loadConfig } from "../config.ts";
+import { getLocalIdentity } from "../docker-env.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
 import { LocalRef } from "../reference.ts";
 import { isTerminal } from "../terminal/tty.ts";
+import { DeploymentManifest } from "../deployment/manifest.ts";
 
 const GAME_SERVER_ROOT = "./server";
 const CACHE_ROOT = "./.cache/components";
 const IS_TTY = isTerminal(Deno.stdout);
+
+class AsyncLock {
+  #mutex: Promise<void> = Promise.resolve();
+
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    let release: (() => void) | undefined;
+    const prev = this.#mutex;
+    this.#mutex = new Promise((resolve) => (release = resolve));
+    await prev;
+    try {
+      return await fn();
+    } finally {
+      release?.();
+    }
+  }
+}
 
 type DeployConfig = {
   worldContainer: "root" | "worlds";
@@ -299,13 +317,13 @@ const copyToDir = async (
   srcPath: string,
   destDir: string,
   componentName?: string,
-) => {
+): Promise<string> => {
   const targetPath = join(destDir, componentName ?? basename(srcPath));
   const normalizedSrc = await Deno.realPath(srcPath).catch(() => srcPath);
   const normalizedDest = await Deno.realPath(targetPath).catch(
     () => targetPath,
   );
-  if (normalizedSrc === normalizedDest) return;
+  if (normalizedSrc === normalizedDest) return normalizedDest;
 
   const stat = await Deno.stat(srcPath);
   await Deno.mkdir(destDir, { recursive: true });
@@ -314,6 +332,7 @@ const copyToDir = async (
     : basename(srcPath);
   const dest = join(destDir, targetName);
   await copy(srcPath, dest, { overwrite: true });
+  return dest;
 };
 
 const copyWorldDir = async (srcPath: string, destPath: string) => {
@@ -329,6 +348,33 @@ const copyWorldDir = async (srcPath: string, destPath: string) => {
     await copy(from, to, { overwrite: true });
   }
   info(`Synced world from ${srcPath} to ${destPath}`);
+};
+
+const resolveAbsolutePath = async (path: string) => {
+  try {
+    return await Deno.realPath(path);
+  } catch {
+    return path;
+  }
+};
+
+const removeDeployedArtifacts = async (
+  paths: string[],
+  componentName: string,
+) => {
+  for (const target of paths) {
+    try {
+      const stat = await Deno.lstat(target);
+      if (stat.isDirectory) {
+        await Deno.remove(target, { recursive: true });
+      } else {
+        await Deno.remove(target);
+      }
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) continue;
+      warn(`Failed to remove previous artifact for ${componentName}: ${error}`);
+    }
+  }
 };
 
 const componentBasePath = (component: IComponent) =>
@@ -483,10 +529,22 @@ const runBuild = async (
         .catch(() => false);
       const baseCmd = useGradlew ? `./gradlew` : `gradle`;
       const gradleCmd = `${baseCmd} ${task} --console=plain`;
+      const { uid, gid, username } = getLocalIdentity();
+      const userArgs = [
+        "-u",
+        `${uid}:${gid}`,
+        "-e",
+        `LOCAL_UID=${uid}`,
+        "-e",
+        `LOCAL_GID=${gid}`,
+        "-e",
+        `LOCAL_USER=${username}`,
+      ];
       const dockerCmd = new Deno.Command("docker", {
         args: [
           "run",
           "--rm",
+          ...userArgs,
           "-e",
           "CI=1",
           "-e",
@@ -517,10 +575,22 @@ const runBuild = async (
           ? build.workdir
           : join(absWorkdir, build.workdir)
         : absWorkdir;
+      const { uid, gid, username } = getLocalIdentity();
+      const userArgs = [
+        "-u",
+        `${uid}:${gid}`,
+        "-e",
+        `LOCAL_UID=${uid}`,
+        "-e",
+        `LOCAL_GID=${gid}`,
+        "-e",
+        `LOCAL_USER=${username}`,
+      ];
       const dockerCmd = new Deno.Command("docker", {
         args: [
           "run",
           "--rm",
+          ...userArgs,
           "-e",
           "CI=1",
           "-e",
@@ -583,13 +653,14 @@ const deployEntry = async (
   srcPath: string,
   destDir: string,
   componentName: string,
-) => {
+): Promise<string | undefined> => {
   try {
-    await copyToDir(srcPath, destDir, componentName);
+    return await copyToDir(srcPath, destDir, componentName);
   } catch (error) {
     warn(
       `Failed to deploy ${componentName} from ${srcPath} to ${destDir}: ${error}`,
     );
+    return undefined;
   }
 };
 
@@ -645,9 +716,12 @@ const applyComponents = async (
   const resourcepacksDir = join(GAME_SERVER_ROOT, "resourcepacks");
   const pluginsDir = join(GAME_SERVER_ROOT, "plugins");
   const modsDir = join(GAME_SERVER_ROOT, "mods");
+  const manifest = await DeploymentManifest.load(GAME_SERVER_ROOT);
+  const manifestLock = new AsyncLock();
 
   const tasks = components.map(async (component) => {
     status.start(component.name, "resolving");
+    const componentId = toComponentId(component);
     try {
       const localPromise = component.kind === ComponentIDType.WORLD
         ? ensureWorldSource(component)
@@ -711,7 +785,19 @@ const applyComponents = async (
         finalArtifactPath = picked;
       }
 
+      const previousPaths = await manifestLock.runExclusive(async () => {
+        const recorded = manifest.getAbsolutePaths(componentId);
+        manifest.setPaths(componentId, []);
+        await manifest.saveIfDirty();
+        return recorded;
+      });
+      if (previousPaths.length) {
+        await removeDeployedArtifacts(previousPaths, component.name);
+      }
+
       status.update(component.name, "deploying");
+      const deployedPaths: string[] = [];
+      let deploymentSucceeded = false;
       switch (component.kind) {
         case ComponentIDType.WORLD: {
           if (!finalArtifactPath) {
@@ -720,20 +806,38 @@ const applyComponents = async (
           }
           await copyWorldDir(finalArtifactPath, worldPath);
           status.succeed(component.name, "deployed world");
+          deployedPaths.push(await resolveAbsolutePath(worldPath));
+          deploymentSucceeded = true;
           break;
         }
         case ComponentIDType.DATAPACKS: {
-          await deployEntry(finalArtifactPath, datapacksDir, component.name);
+          const dest = await deployEntry(
+            finalArtifactPath,
+            datapacksDir,
+            component.name,
+          );
+          if (!dest) {
+            status.fail(component.name, "failed to deploy datapack");
+            break;
+          }
+          deployedPaths.push(await resolveAbsolutePath(dest));
           status.succeed(component.name, "deployed datapack");
+          deploymentSucceeded = true;
           break;
         }
         case ComponentIDType.RESOURCEPACKS: {
-          await deployEntry(
+          const dest = await deployEntry(
             finalArtifactPath,
             resourcepacksDir,
             component.name,
           );
+          if (!dest) {
+            status.fail(component.name, "failed to deploy resourcepack");
+            break;
+          }
+          deployedPaths.push(await resolveAbsolutePath(dest));
           status.succeed(component.name, "deployed resourcepack");
+          deploymentSucceeded = true;
           break;
         }
         case ComponentIDType.PLUGINS: {
@@ -741,8 +845,18 @@ const applyComponents = async (
             status.fail(component.name, `unsupported on ${serverType}`);
             break;
           }
-          await deployEntry(finalArtifactPath, pluginsDir, component.name);
+          const dest = await deployEntry(
+            finalArtifactPath,
+            pluginsDir,
+            component.name,
+          );
+          if (!dest) {
+            status.fail(component.name, "failed to deploy plugin");
+            break;
+          }
+          deployedPaths.push(await resolveAbsolutePath(dest));
           status.succeed(component.name, "deployed plugin");
+          deploymentSucceeded = true;
           break;
         }
         case ComponentIDType.MODS: {
@@ -750,13 +864,30 @@ const applyComponents = async (
             status.fail(component.name, `unsupported on ${serverType}`);
             break;
           }
-          await deployEntry(finalArtifactPath, modsDir, component.name);
+          const dest = await deployEntry(
+            finalArtifactPath,
+            modsDir,
+            component.name,
+          );
+          if (!dest) {
+            status.fail(component.name, "failed to deploy mod");
+            break;
+          }
+          deployedPaths.push(await resolveAbsolutePath(dest));
           status.succeed(component.name, "deployed mod");
+          deploymentSucceeded = true;
           break;
         }
         default:
           status.fail(component.name, `unknown kind ${component.kind}`);
           break;
+      }
+
+      if (deploymentSucceeded) {
+        await manifestLock.runExclusive(async () => {
+          manifest.setPaths(componentId, deployedPaths);
+          await manifest.saveIfDirty();
+        });
       }
     } catch (error) {
       status.fail(component.name, `failed: ${error}`);

@@ -14,13 +14,23 @@ function safeGid() {
   }
 }
 
-export function getComposeEnv() {
-  const uid = safeUid();
-  const gid = safeGid();
-  const username = Deno.env.get("LOCAL_USER") ||
+function resolveUsername() {
+  return Deno.env.get("LOCAL_USER") ||
     Deno.env.get("USER") ||
     Deno.env.get("USERNAME") ||
     "ctbx";
+}
+
+export function getLocalIdentity() {
+  return {
+    uid: safeUid(),
+    gid: safeGid(),
+    username: resolveUsername(),
+  };
+}
+
+export function getComposeEnv() {
+  const { uid, gid, username } = getLocalIdentity();
 
   return {
     LOCAL_UID: `${uid}`,
