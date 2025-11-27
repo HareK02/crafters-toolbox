@@ -19,6 +19,26 @@ components:
       artifact:
         type: jar
         path: build/libs
+    hcu-lib:
+      source:
+        type: git
+        url: 'git@gitea.hareworks.net:hcu/Economy.git'
+      build:
+        type: gradle
+        task: shadowJar
+      artifact:
+        type: jar
+        path: build/libs
+    Economy:
+      source:
+        type: git
+        url: 'git@gitea.hareworks.net:hcu/Economy.git'
+      build:
+        type: gradle
+        task: shadowJar
+      artifact:
+        type: jar
+        path: build/libs
   resourcepacks:
     hoge:
       source:

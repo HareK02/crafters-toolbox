@@ -13,6 +13,7 @@ type ContainerState = {
 const decoder = new TextDecoder();
 const REATTACH_TIMEOUT_MS = 120_000;
 const REATTACH_POLL_INTERVAL_MS = 2_000;
+const DETACH_KEYS = "ctrl-c";
 
 export async function attachContainerConsole(
   containerName: string,
@@ -41,13 +42,17 @@ export async function attachContainerConsole(
     const result = await runTerminalSession({
       title,
       command: "docker",
-      args: ["attach", "--sig-proxy=false", containerName],
-      wrapInPty: true,
+      args: [
+        "attach",
+        "--sig-proxy=false",
+        `--detach-keys=${DETACH_KEYS}`,
+        containerName,
+      ],
       startMessage,
       exitMessage: null,
     });
 
-    if (result.interrupted) {
+    if (result.interrupted || isManualDetachExit(result.status)) {
       return;
     }
 
@@ -118,4 +123,14 @@ function shouldAutoReconnect(state: ContainerState | null): boolean {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isManualDetachExit(status: Deno.CommandStatus): boolean {
+  if (status.success && status.code === 0) return true;
+  if (typeof status.code === "number" && status.code === 1) return true;
+  const manualExitCodes = new Set([130, 131, 143]);
+  if (typeof status.code === "number" && manualExitCodes.has(status.code)) {
+    return true;
+  }
+  return false;
 }

@@ -81,6 +81,7 @@ export type ArtifactConfig = {
   path?: string;
   unzip?: boolean;
   target?: string;
+  pattern?: string;
 };
 
 export interface IComponent {

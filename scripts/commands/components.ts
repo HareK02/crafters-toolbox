@@ -21,7 +21,6 @@ import { readComponents } from "../components_reader.ts";
 import { getJavaImage, loadConfig } from "../config.ts";
 import { getLocalIdentity } from "../docker-env.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
-import { LocalRef } from "../reference.ts";
 import { isTerminal } from "../terminal/tty.ts";
 import { DeploymentManifest } from "../deployment/manifest.ts";
 
@@ -667,16 +666,38 @@ const deployEntry = async (
 const pickArtifactFile = async (
   basePath: string,
   preferredExts: string[],
+  pattern?: string,
 ): Promise<string | undefined> => {
-  const files: string[] = [];
+  let regex: RegExp | undefined;
+  if (pattern) {
+    try {
+      regex = new RegExp(pattern);
+    } catch (error) {
+      warn(`Invalid artifact.pattern /${pattern}/: ${error}`);
+    }
+  }
+
+  const candidates: { name: string; mtimeMs: number }[] = [];
   for await (const entry of Deno.readDir(basePath)) {
-    if (entry.isFile) files.push(entry.name);
+    if (!entry.isFile) continue;
+    if (regex && !regex.test(entry.name)) continue;
+    if (preferredExts.length) {
+      const lower = entry.name.toLowerCase();
+      const matchesExt = preferredExts.some((ext) => lower.endsWith(ext));
+      if (!matchesExt) continue;
+    }
+    const fullPath = join(basePath, entry.name);
+    const stat = await Deno.stat(fullPath).catch(() => undefined);
+    if (!stat) continue;
+    const mtimeMs = stat.mtime?.getTime() ?? 0;
+    candidates.push({ name: entry.name, mtimeMs });
   }
-  for (const ext of preferredExts) {
-    const found = files.find((f) => f.toLowerCase().endsWith(ext));
-    if (found) return join(basePath, found);
-  }
-  return files.length === 1 ? join(basePath, files[0]) : undefined;
+
+  if (candidates.length === 0) return undefined;
+  candidates.sort((a, b) =>
+    b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name)
+  );
+  return join(basePath, candidates[0].name);
 };
 
 const applyComponents = async (
@@ -777,7 +798,11 @@ const applyComponents = async (
           : artifact.type === "zip"
           ? [".zip"]
           : [];
-        const picked = await pickArtifactFile(artifactPath, exts);
+        const picked = await pickArtifactFile(
+          artifactPath,
+          exts,
+          artifact.pattern,
+        );
         if (!picked) {
           status.fail(component.name, "artifact file not found in directory");
           return;
@@ -921,6 +946,107 @@ const LOCAL_SOURCE_BASE: Record<ComponentIDType, string> = {
   [ComponentIDType.PLUGINS]: "./components/plugins",
   [ComponentIDType.RESOURCEPACKS]: "./components/resourcepacks",
   [ComponentIDType.MODS]: "./components/mods",
+};
+
+type UnregisteredComponentEntry = {
+  id: ComponentIDString;
+  type: ComponentIDType;
+  name?: string;
+  path: string;
+};
+
+const resolveLocalComponentPath = (
+  type: ComponentIDType,
+  name?: string,
+): string | undefined => {
+  const base = LOCAL_SOURCE_BASE[type];
+  if (!base) return undefined;
+  if (type === ComponentIDType.WORLD) return base;
+  if (!name) return undefined;
+  return join(base, name);
+};
+
+const pathExists = async (path: string) => {
+  try {
+    await Deno.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const discoverUnregisteredComponents = async (
+  properties: PropertiesManager,
+): Promise<Map<ComponentIDString, UnregisteredComponentEntry>> => {
+  const entries = new Map<ComponentIDString, UnregisteredComponentEntry>();
+  const registeredIds = new Set(
+    properties.getComponentsAsArray().map((component) => toComponentId(component)),
+  );
+
+  try {
+    const currentComponents = await readComponents("./components");
+    for (const componentId of currentComponents) {
+      if (registeredIds.has(componentId)) continue;
+      const { type, name } = ComponentIDString.split(componentId);
+      const path = resolveLocalComponentPath(type, name);
+      if (!path) continue;
+      entries.set(componentId, { id: componentId, type, name, path });
+    }
+  } catch (error) {
+    console.warn("Failed to scan ./components directory:", error);
+  }
+
+  if (!registeredIds.has("world" as ComponentIDString)) {
+    const worldPath = resolveLocalComponentPath(ComponentIDType.WORLD);
+    if (worldPath && await pathExists(worldPath)) {
+      entries.set("world", {
+        id: "world",
+        type: ComponentIDType.WORLD,
+        name: undefined,
+        path: worldPath,
+      });
+    }
+  }
+
+  return entries;
+};
+
+const gitTextDecoder = new TextDecoder();
+
+const runGitCommand = async (
+  cwd: string,
+  args: string[],
+): Promise<{ success: boolean; stdout: string }> => {
+  try {
+    const cmd = new Deno.Command("git", {
+      args: ["-C", cwd, ...args],
+      stdout: "piped",
+      stderr: "piped",
+    });
+    const output = await cmd.output();
+    if (!output.success) return { success: false, stdout: "" };
+    return { success: true, stdout: gitTextDecoder.decode(output.stdout).trim() };
+  } catch {
+    return { success: false, stdout: "" };
+  }
+};
+
+const detectComponentSource = async (relativePath: string): Promise<SourceConfig | undefined> => {
+  const absPath = await Deno.realPath(relativePath).catch(() => undefined);
+  if (!absPath) {
+    console.warn(`Path "${relativePath}" does not exist; unable to determine source.`);
+    return undefined;
+  }
+
+  const gitStatus = await runGitCommand(absPath, ["rev-parse", "--is-inside-work-tree"]);
+  if (gitStatus.success && gitStatus.stdout === "true") {
+    const remote = await runGitCommand(absPath, ["config", "--get", "remote.origin.url"]);
+    if (remote.success && remote.stdout.length > 0) {
+      return { type: "git", url: remote.stdout };
+    }
+  }
+
+  return { type: "local", path: relativePath };
 };
 
 const fallbackLocalPath = (type: ComponentIDType, name?: string) => {
@@ -1167,7 +1293,7 @@ const promptComponentsForUpdate = async (): Promise<
       return {
         value: id,
         label: `${label} (${groupLabel})`,
-        hint: summary,
+        hint: truncateHint(summary),
       };
     });
     const prompts = await import("npm:@clack/prompts");
@@ -1192,6 +1318,55 @@ const promptComponentsForUpdate = async (): Promise<
   }
 };
 
+const getComponentGroupLabel = (type: ComponentIDType) => {
+  return COMPONENT_GROUPS.find((g) => g.type === type)?.label ?? type;
+};
+
+const truncateHint = (text: string, max = 60) => {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+};
+
+const promptComponentsForImport = async (
+  unregistered: Map<ComponentIDString, UnregisteredComponentEntry>,
+): Promise<ComponentIDString[] | undefined> => {
+  if (unregistered.size === 0) {
+    console.log("インポート可能なコンポーネントはありません。");
+    return undefined;
+  }
+
+  const sorted = [...unregistered.values()].sort((a, b) =>
+    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: "base" })
+  );
+  const options = sorted.map((entry) => {
+    const label = entry.type === ComponentIDType.WORLD
+      ? "world"
+      : entry.name ?? entry.id;
+    const groupLabel = getComponentGroupLabel(entry.type);
+    return {
+      value: entry.id,
+      label: `${label} (${groupLabel})`,
+      hint: truncateHint(entry.path),
+    };
+  });
+
+  const prompts = await import("npm:@clack/prompts");
+  const selection = await prompts.multiselect({
+    message: "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",
+    options,
+    required: true,
+  });
+  if (prompts.isCancel(selection) || !Array.isArray(selection)) {
+    console.log("コンポーネントの選択をキャンセルしました。");
+    return undefined;
+  }
+  if (selection.length === 0) {
+    console.log("コンポーネントが選択されていません。");
+    return undefined;
+  }
+  return selection as ComponentIDString[];
+};
+
 const runComponentsUpdate = async (
   args: string[],
   preselected?: ComponentIDString[],
@@ -1205,65 +1380,30 @@ const runComponentsUpdate = async (
     const properties = PropertiesManager.fromYaml(
       Deno.readTextFileSync("./crtb.properties.yml"),
     );
-    const currentComponents = await readComponents("./components");
-
-    const unregisteredComponents = currentComponents.filter((component) => {
-      return !properties
+    const availableIds = new Set(
+      properties
         .getComponentsAsArray()
-        .some((rc) => toComponentId(rc) === component);
-    });
+        .map((component) => toComponentId(component)),
+    );
 
-    for (const component_id_str of unregisteredComponents) {
-      const { type, name } = ComponentIDString.split(component_id_str);
-      if (name === undefined && type !== ComponentIDType.WORLD) {
-        console.warn(`Component ${component_id_str} has no name, skipping`);
-        continue;
+    try {
+      const currentComponents = await readComponents("./components");
+      const unregisteredComponents = currentComponents.filter((component) =>
+        !availableIds.has(component)
+      );
+      if (unregisteredComponents.length) {
+        console.warn(
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
+            unregisteredComponents.join(", ")
+          }`,
+        );
       }
-      const localPath = `./components/${type}s/${name}`;
-      const ref = new LocalRef(localPath);
-      const baseOptions = {
-        source: { type: "local", path: localPath } as SourceConfig,
-      };
-      const component = properties.properties.components;
-      switch (type) {
-        case ComponentIDType.WORLD:
-          component.world = new World(ref, baseOptions);
-          break;
-        case ComponentIDType.DATAPACKS:
-          if (component.datapacks === undefined) component.datapacks = [];
-          component.datapacks.push(new Datapack(name!, ref, baseOptions));
-          break;
-        case ComponentIDType.PLUGINS:
-          if (component.plugins === undefined) component.plugins = [];
-          component.plugins.push(new Plugin(name!, ref, baseOptions));
-          break;
-        case ComponentIDType.RESOURCEPACKS:
-          if (component.resourcepacks === undefined) {
-            component.resourcepacks = [];
-          }
-          component.resourcepacks.push(
-            new Resourcepack(name!, ref, baseOptions),
-          );
-          break;
-        case ComponentIDType.MODS:
-          if (component.mods === undefined) component.mods = [];
-          component.mods.push(new Mod(name!, ref, baseOptions));
-          break;
-        default:
-          console.warn(`Unknown component type: ${type}. Skipping ${name}`);
-          continue;
-      }
+    } catch (error) {
+      console.warn("Failed to scan ./components directory:", error);
     }
-
-    Deno.writeTextFileSync("./crtb.properties.yml", properties.toYaml());
 
     let selectedSet: Set<ComponentIDString> | undefined;
     if (selectionFromArgs && selectionFromArgs.length) {
-      const availableIds = new Set(
-        properties
-          .getComponentsAsArray()
-          .map((component) => toComponentId(component)),
-      );
       const matched: ComponentIDString[] = [];
       const missing: ComponentIDString[] = [];
       for (const id of selectionFromArgs) {
@@ -1292,6 +1432,159 @@ const runComponentsUpdate = async (
   }
 };
 
+const registerImportedComponent = (
+  properties: PropertiesManager,
+  entry: UnregisteredComponentEntry,
+  source: SourceConfig,
+): boolean => {
+  const baseOptions = { source };
+  const component = properties.properties.components;
+  switch (entry.type) {
+    case ComponentIDType.WORLD:
+      component.world = new World(undefined, baseOptions);
+      return true;
+    case ComponentIDType.DATAPACKS:
+      if (!entry.name) {
+        console.warn(`Component ${entry.id} has no name; skipping import.`);
+        return false;
+      }
+      component.datapacks ??= [];
+      component.datapacks.push(new Datapack(entry.name, undefined, baseOptions));
+      return true;
+    case ComponentIDType.PLUGINS:
+      if (!entry.name) {
+        console.warn(`Component ${entry.id} has no name; skipping import.`);
+        return false;
+      }
+      component.plugins ??= [];
+      component.plugins.push(new Plugin(entry.name, undefined, baseOptions));
+      return true;
+    case ComponentIDType.RESOURCEPACKS:
+      if (!entry.name) {
+        console.warn(`Component ${entry.id} has no name; skipping import.`);
+        return false;
+      }
+      component.resourcepacks ??= [];
+      component.resourcepacks.push(
+        new Resourcepack(entry.name, undefined, baseOptions),
+      );
+      return true;
+    case ComponentIDType.MODS:
+      if (!entry.name) {
+        console.warn(`Component ${entry.id} has no name; skipping import.`);
+        return false;
+      }
+      component.mods ??= [];
+      component.mods.push(new Mod(entry.name, undefined, baseOptions));
+      return true;
+    default:
+      console.warn(`Unknown component type: ${entry.type}`);
+      return false;
+  }
+};
+
+const runComponentsImport = async (
+  args: string[],
+  preselected?: ComponentIDString[],
+) => {
+  const selectionFromArgs = preselected?.length
+    ? preselected
+    : parseComponentArgs(args);
+  if (selectionFromArgs === null) return;
+
+  let properties: PropertiesManager;
+  try {
+    properties = PropertiesManager.fromYaml(
+      Deno.readTextFileSync("./crtb.properties.yml"),
+    );
+  } catch (error) {
+    console.error("Failed to load crtb.properties.yml:", error);
+    return;
+  }
+
+  const unregistered = await discoverUnregisteredComponents(properties);
+  if (unregistered.size === 0) {
+    console.log(
+      "crtb.properties.yml に未登録のコンポーネントは見つかりませんでした。",
+    );
+    return;
+  }
+
+  let targetIds: ComponentIDString[];
+  if (selectionFromArgs && selectionFromArgs.length) {
+    const missing = selectionFromArgs.filter((id) => !unregistered.has(id));
+    if (missing.length) {
+      console.warn(
+        `The following components are not available for import: ${
+          missing.join(", ")
+        }`,
+      );
+    }
+    targetIds = selectionFromArgs.filter((id) => unregistered.has(id));
+    if (!targetIds.length) {
+      console.error("インポート対象のコンポーネントが見つかりませんでした。");
+      return;
+    }
+  } else {
+    targetIds = [...unregistered.keys()];
+  }
+
+  const imported: ComponentIDString[] = [];
+  for (const id of targetIds) {
+    const entry = unregistered.get(id);
+    if (!entry) continue;
+    const source = await detectComponentSource(entry.path);
+    if (!source) {
+      console.warn(`${id}: ソースが特定できなかったためスキップしました。`);
+      continue;
+    }
+    const registered = registerImportedComponent(properties, entry, source);
+    if (!registered) continue;
+    imported.push(id);
+  }
+
+  if (!imported.length) {
+    console.log("インポートされたコンポーネントはありません。");
+    return;
+  }
+
+  try {
+    Deno.writeTextFileSync("./crtb.properties.yml", properties.toYaml());
+  } catch (error) {
+    console.error("Failed to write crtb.properties.yml:", error);
+    return;
+  }
+
+  console.log(
+    `Imported ${imported.length} component(s): ${imported.join(", ")}`,
+  );
+};
+
+const runComponentsImportInteractive = async () => {
+  try {
+    const properties = PropertiesManager.fromYaml(
+      Deno.readTextFileSync("./crtb.properties.yml"),
+    );
+    const unregistered = await discoverUnregisteredComponents(properties);
+    if (unregistered.size === 0) {
+      console.log(
+        "crtb.properties.yml に未登録のコンポーネントは見つかりませんでした。",
+      );
+      return;
+    }
+    const selection = await promptComponentsForImport(unregistered);
+    if (!selection || selection.length === 0) {
+      console.log(
+        "コンポーネントが選択されていないため、インポートを中止しました。",
+      );
+      return;
+    }
+    await runComponentsImport([], selection);
+  } catch (error) {
+    console.error("Failed to prepare import flow:", error);
+  }
+};
+
 const cmd: Command = {
   name: "components",
   description: "Show components information",
@@ -1300,6 +1593,17 @@ const cmd: Command = {
       name: "list",
       description: "List all components",
       handler: renderComponentInventory,
+    },
+    {
+      name: "import",
+      description:
+        "Register locally discovered components into crtb.properties.yml",
+      handler: async (args: string[]) => {
+        await runComponentsImport(args);
+      },
+      interactiveHandler: async () => {
+        await runComponentsImportInteractive();
+      },
     },
     {
       name: "update",

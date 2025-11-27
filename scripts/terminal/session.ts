@@ -31,8 +31,7 @@ export async function runTerminalSession(
     displayClosed = true;
   };
   const interactive = isTerminal(Deno.stdin) && isTerminal(Deno.stdout);
-  const rawCapable = interactive && canEnableRawMode(Deno.stdin);
-  const useManagedPty = !!options.wrapInPty && rawCapable;
+  const useManagedPty = !!options.wrapInPty && interactive;
   const defaultStart = useManagedPty
     ? `${options.title}: Attaching to container console. Press Ctrl+C to detach without stopping the server.`
     : `${options.title}: Attaching to container console. Detach with ${DOCKER_DETACH_HINT}.`;
@@ -45,14 +44,16 @@ export async function runTerminalSession(
     return await waitForProcess(child, display, options, closeDisplay);
   }
 
-  const restoreRaw = enableRawMode(Deno.stdin);
   const abortController = new AbortController();
-  const inputPromise = forwardInputToChild({
+  const forwarder = createInputForwarder({
     child,
     title: options.title,
     display,
     signal: abortController.signal,
   });
+  const sigintHandler = () => forwarder.requestDetach();
+  Deno.addSignalListener("SIGINT", sigintHandler);
+  const inputPromise = forwarder.start();
 
   let detached = false;
   let status: Deno.CommandStatus;
@@ -63,9 +64,9 @@ export async function runTerminalSession(
     try {
       detached = await inputPromise;
     } catch (_error) {
-      detached = false;
+      detached = true;
     }
-    restoreRaw?.();
+    Deno.removeSignalListener("SIGINT", sigintHandler);
   }
 
   display.clearStatus();
@@ -163,92 +164,90 @@ function shellQuote(token: string) {
 
 const CTRL_C = 0x03;
 const DETACH_SEQUENCE = new Uint8Array([0x10, 0x11]);
-const DOCKER_DETACH_HINT = "Ctrl+P, Ctrl+Q";
+const DOCKER_DETACH_HINT = "Ctrl+C";
 
-type RawCapableStdin = typeof Deno.stdin & {
-  setRaw?: (mode: boolean) => void;
+type InputForwarder = {
+  start: () => Promise<boolean>;
+  requestDetach: () => void;
 };
 
-function canEnableRawMode(
-  stream: typeof Deno.stdin,
-): stream is RawCapableStdin {
-  return typeof (stream as RawCapableStdin).setRaw === "function";
-}
+function createInputForwarder(
+  options: {
+    child: SpawnedProcess;
+    title: string;
+    display: TerminalDisplay;
+    signal: AbortSignal;
+  },
+): InputForwarder {
+  const stdinStream = Deno.stdin.readable;
+  const childStdin = options.child.stdin;
+  if (!stdinStream || !childStdin) {
+    return {
+      start: async () => false,
+      requestDetach: () => {},
+    };
+  }
 
-function enableRawMode(stream: typeof Deno.stdin) {
-  const tty = stream as RawCapableStdin;
-  tty.setRaw?.(true);
-  return () => {
-    try {
-      tty.setRaw?.(false);
-    } catch (_error) {
-      // ignore restore errors
-    }
+  const writer = childStdin.getWriter();
+  const reader = stdinStream.getReader();
+  let detaching = false;
+  let cleanedUp = false;
+
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    options.signal.removeEventListener("abort", abortListener);
+    reader.releaseLock();
+    writer.releaseLock();
   };
-}
-
-async function forwardInputToChild(options: {
-  child: SpawnedProcess;
-  title: string;
-  display: TerminalDisplay;
-  signal: AbortSignal;
-}): Promise<boolean> {
-  if (!options.child.stdin) return false;
-  const stdinReadable =
-    (Deno.stdin as { readable?: ReadableStream<Uint8Array> })
-      .readable;
-  if (!stdinReadable) return false;
-  const reader = stdinReadable.getReader();
-  const writer = options.child.stdin.getWriter();
-  let detached = false;
-  let inputEnded = false;
 
   const abortListener = () => {
     reader.cancel().catch(() => {});
   };
-  options.signal.addEventListener("abort", abortListener);
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        inputEnded = true;
-        break;
-      }
-      if (!value || value.length === 0) continue;
+  const requestDetach = () => {
+    if (detaching) return;
+    detaching = true;
+    options.display.setStatus(
+      `${options.title}: Detaching (server keeps running)...`,
+    );
+    reader.cancel().catch(() => {});
+    writer.write(DETACH_SEQUENCE).catch(() => {})
+      .finally(() => writer.close().catch(() => {}));
+  };
 
-      const ctrlIndex = value.indexOf(CTRL_C);
-      if (ctrlIndex >= 0) {
-        if (ctrlIndex > 0) {
-          await writer.write(value.subarray(0, ctrlIndex));
+  const start = async (): Promise<boolean> => {
+    options.signal.addEventListener("abort", abortListener);
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value || value.length === 0) continue;
+
+        if (!detaching) {
+          const ctrlIndex = value.indexOf(CTRL_C);
+          if (ctrlIndex >= 0) {
+            if (ctrlIndex > 0) {
+              await writer.write(value.subarray(0, ctrlIndex));
+            }
+            requestDetach();
+            break;
+          }
         }
-        options.display.setStatus(
-          `${options.title}: Detaching (server keeps running)...`,
-        );
-        await writer.write(DETACH_SEQUENCE);
-        detached = true;
-        break;
-      }
 
-      await writer.write(value);
-    }
-  } catch (error) {
-    if (!(error instanceof DOMException && error.name === "AbortError")) {
-      throw error;
-    }
-  } finally {
-    options.signal.removeEventListener("abort", abortListener);
-    if (inputEnded) {
-      try {
-        await writer.close();
-      } catch (_error) {
-        // ignore close errors
+        if (!detaching) {
+          await writer.write(value);
+        }
       }
-    } else {
-      writer.releaseLock();
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        throw error;
+      }
+    } finally {
+      cleanup();
     }
-    reader.releaseLock();
-  }
+    return detaching;
+  };
 
-  return detached;
+  return { start, requestDetach };
 }

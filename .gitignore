@@ -1,4 +1,3 @@
 .cache
 server
-components/plugins/my_plugin
-components/resourcepacks/hoge
+components

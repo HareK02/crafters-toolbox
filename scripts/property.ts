@@ -1,4 +1,3 @@
-import { str } from "https://jsr.io/@std/yaml/1.0.5/_type/str.ts";
 import { Datapack } from "./components/datapack.ts";
 import { Mod } from "./components/mod.ts";
 import { Plugin } from "./components/plugin.ts";

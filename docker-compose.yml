@@ -9,6 +9,8 @@ x-base-service: &base-service
     - LOCAL_UID=${LOCAL_UID}
     - LOCAL_GID=${LOCAL_GID}
     - LOCAL_USER=${LOCAL_USER}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
 
 services:
   game-server:
