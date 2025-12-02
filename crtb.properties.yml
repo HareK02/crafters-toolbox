@@ -9,36 +9,43 @@ components:
         type: http
         url: >-
           https://ci.athion.net/job/FastAsyncWorldEdit/1217/artifact/artifacts/FastAsyncWorldEdit-Paper-2.14.1-SNAPSHOT-1217.jar
-    mcdb:
-      source:
-        type: git
-        url: 'git@gitea.hareworks.net:Hare/simply-minecraft-db.git'
-      build:
-        type: gradle
-        task: shadowJar
-      artifact:
-        type: jar
-        path: build/libs
     hcu-lib:
       source:
         type: git
-        url: 'git@gitea.hareworks.net:hcu/Economy.git'
+        url: "git@gitea.hareworks.net:hcu/hcu-lib.git"
       build:
         type: gradle
         task: shadowJar
       artifact:
         type: jar
         path: build/libs
+        pattern: '-min\.jar$'
     Economy:
       source:
         type: git
-        url: 'git@gitea.hareworks.net:hcu/Economy.git'
+        url: "git@gitea.hareworks.net:hcu/Economy.git"
       build:
         type: gradle
         task: shadowJar
       artifact:
         type: jar
         path: build/libs
+        pattern: '-min\.jar$'
+    mcdb:
+      source:
+        type: git
+        url: "git@gitea.hareworks.net:Hare/simply-minecraft-db.git"
+      build:
+        type: gradle
+        task: shadowJar
+      artifact:
+        type: jar
+        path: build/libs
+        pattern: '-min\.jar$'
+    luckperms:
+      source:
+        type: http
+        url: "https://cdn.modrinth.com/data/Vebnzrzj/versions/OrIs0S6b/LuckPerms-Bukkit-5.5.17.jar"
   resourcepacks:
     hoge:
       source:

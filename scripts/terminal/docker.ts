@@ -1,4 +1,5 @@
 import { runTerminalSession } from "./session.ts";
+import type { TerminalSessionResult } from "./session.ts";
 
 export type AttachOptions = {
   title?: string;
@@ -8,6 +9,9 @@ type ContainerState = {
   Status: string;
   Running: boolean;
   Restarting: boolean;
+  Pid?: number;
+  StartedAt?: string;
+  FinishedAt?: string;
 };
 
 const decoder = new TextDecoder();
@@ -21,21 +25,37 @@ export async function attachContainerConsole(
 ) {
   const title = options.title ?? containerName;
   let attempt = 0;
-  let waitForRestart = false;
+  let pendingExitReason: ExitReason | null = null;
 
   while (true) {
     attempt++;
-    if (waitForRestart) {
+    if (pendingExitReason) {
       const ready = await waitForContainerRunning(containerName);
       if (!ready) {
         console.log(
-          `${title}: Container stopped and did not restart. Console session will exit.`,
+          `${title}: ${
+            describeExitReason(pendingExitReason)
+          } Container did not restart within ${
+            REATTACH_TIMEOUT_MS / 1000
+          } seconds. Console session will exit.`,
         );
         break;
       }
+      pendingExitReason = null;
     }
 
-    const startMessage = waitForRestart
+    const sessionState = await inspectContainerState(containerName);
+    if (!sessionState || !isStateRunning(sessionState)) {
+      console.log(
+        `${title}: Container is not running. Console session ended.`,
+      );
+      break;
+    }
+    const sessionPid = typeof sessionState.Pid === "number"
+      ? sessionState.Pid
+      : null;
+
+    const startMessage = attempt > 1
       ? `${title}: Reattaching to container console (attempt ${attempt}).`
       : undefined;
 
@@ -52,26 +72,18 @@ export async function attachContainerConsole(
       exitMessage: null,
     });
 
-    if (result.interrupted || isManualDetachExit(result.status)) {
+    const state = await inspectContainerState(containerName);
+    const exitReason = classifyExit(result, state, sessionPid);
+    if (exitReason.kind === "manual") {
       return;
     }
 
-    const state = await inspectContainerState(containerName);
-    if (!shouldAutoReconnect(state)) {
-      console.log(
-        `${title}: Container is ${
-          state?.Status ?? "unavailable"
-        }. Console session ended.`,
-      );
-      break;
-    }
-
     console.log(
-      `${title}: Container restarted (exit code ${
-        result.status.code ?? "?"
-      }). Reattaching...`,
+      `${title}: ${
+        describeExitReason(exitReason)
+      } Waiting for Docker to restart...`,
     );
-    waitForRestart = true;
+    pendingExitReason = exitReason;
   }
 
   console.log(`${title}: Console closed.`);
@@ -113,24 +125,81 @@ async function waitForContainerRunning(
   return false;
 }
 
-function shouldAutoReconnect(state: ContainerState | null): boolean {
-  if (!state) return false;
-  if (state.Status === "running" && state.Running) return true;
-  if (state.Restarting) return true;
-  if (state.Status === "created") return true;
-  return false;
-}
-
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isManualDetachExit(status: Deno.CommandStatus): boolean {
-  if (status.success && status.code === 0) return true;
-  if (typeof status.code === "number" && status.code === 1) return true;
-  const manualExitCodes = new Set([130, 131, 143]);
-  if (typeof status.code === "number" && manualExitCodes.has(status.code)) {
-    return true;
+type ExitReason =
+  | { kind: "manual" }
+  | { kind: "graceful"; code: number | null }
+  | { kind: "signal"; code: number | null; signal?: string | null }
+  | { kind: "error"; code: number | null; signal?: string | null };
+
+function classifyExit(
+  result: TerminalSessionResult,
+  state: ContainerState | null,
+  sessionPid: number | null,
+): ExitReason {
+  const { interrupted, status } = result;
+  if (interrupted) {
+    return { kind: "manual" };
   }
-  return false;
+
+  const code = typeof status.code === "number" ? status.code : null;
+  const signal = status.signal ?? null;
+  const containerRunning = isStateRunning(state);
+  if (
+    containerRunning && sessionPid !== null && typeof state?.Pid === "number" &&
+    state.Pid === sessionPid
+  ) {
+    return { kind: "manual" };
+  }
+
+  if (status.success) {
+    return { kind: "graceful", code };
+  }
+
+  const manualDetachCodes = new Set([130, 131]);
+  if (code !== null && manualDetachCodes.has(code)) {
+    return { kind: "manual" };
+  }
+
+  if (code !== null && (code === 137 || code === 143)) {
+    return { kind: "signal", code, signal };
+  }
+
+  if (signal) {
+    return { kind: "signal", code, signal };
+  }
+
+  return { kind: "error", code, signal };
+}
+
+function describeExitReason(reason: ExitReason): string {
+  switch (reason.kind) {
+    case "graceful": {
+      const suffix = typeof reason.code === "number"
+        ? ` (exit code ${reason.code})`
+        : "";
+      return `Server process exited cleanly${suffix}.`;
+    }
+    case "signal": {
+      const detail = reason.signal
+        ? `signal ${reason.signal}`
+        : `exit code ${reason.code ?? "?"}`;
+      return `Container stopped due to ${detail}.`;
+    }
+    case "error": {
+      const suffix = typeof reason.code === "number"
+        ? ` (exit code ${reason.code})`
+        : "";
+      return `Container exited unexpectedly${suffix}.`;
+    }
+    case "manual":
+      return "Console detached manually.";
+  }
+}
+
+function isStateRunning(state: ContainerState | null | undefined): boolean {
+  return !!(state && state.Status === "running" && state.Running);
 }

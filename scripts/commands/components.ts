@@ -26,7 +26,10 @@ import { DeploymentManifest } from "../deployment/manifest.ts";
 
 const GAME_SERVER_ROOT = "./server";
 const CACHE_ROOT = "./.cache/components";
-const IS_TTY = isTerminal(Deno.stdout);
+const STREAM_COMPONENT_LOGS = !(
+  Deno.env.get("CRTB_COMPONENTS_STREAM_LOGS") === "0"
+);
+const IS_TTY = !STREAM_COMPONENT_LOGS && isTerminal(Deno.stdout);
 
 class AsyncLock {
   #mutex: Promise<void> = Promise.resolve();
@@ -125,16 +128,15 @@ const createStatusManager = (totalCount: number) => {
     names.forEach((name) => {
       const state = states.get(name);
       if (!state) return;
-      const icon = state.state === "running"
-        ? spinner.frames[state.frame % spinner.frames.length]
-        : state.state === "succeed"
-        ? "✓"
-        : "✗";
-      const label = `${name.padEnd(maxName)} [${
-        state.phase.padEnd(
-          10,
-        )
-      } ${icon}]`;
+      const icon =
+        state.state === "running"
+          ? spinner.frames[state.frame % spinner.frames.length]
+          : state.state === "succeed"
+            ? "✓"
+            : "✗";
+      const label = `${name.padEnd(maxName)} [${state.phase.padEnd(
+        10,
+      )} ${icon}]`;
       lines.push(`  ${label}`);
     });
 
@@ -266,9 +268,10 @@ const resolveWorldPath = (
   levelName: string,
 ): string => {
   const config = DEPLOY_CONFIGS[serverType];
-  const base = config?.worldContainer === "worlds"
-    ? join(GAME_SERVER_ROOT, "worlds")
-    : GAME_SERVER_ROOT;
+  const base =
+    config?.worldContainer === "worlds"
+      ? join(GAME_SERVER_ROOT, "worlds")
+      : GAME_SERVER_ROOT;
   return join(base, levelName);
 };
 
@@ -298,8 +301,8 @@ const downloadTo = async (
       warn(`Failed to download ${url} (status: ${res.status})`);
       return false;
     }
-    const fileName = basename(new URL(url).pathname) ||
-      fallbackName.replace(/[/\\]/g, "");
+    const fileName =
+      basename(new URL(url).pathname) || fallbackName.replace(/[/\\]/g, "");
     await Deno.mkdir(destDir, { recursive: true });
     await Deno.writeFile(
       join(destDir, fileName),
@@ -428,8 +431,8 @@ const ensureLocalPresence = async (
     const checkoutArgs = source.commit
       ? ["git", "-C", repoDir, "checkout", source.commit]
       : source.branch
-      ? ["git", "-C", repoDir, "checkout", source.branch]
-      : undefined;
+        ? ["git", "-C", repoDir, "checkout", source.branch]
+        : undefined;
 
     const exists = await Deno.stat(repoDir)
       .then(() => true)
@@ -508,6 +511,79 @@ const resolveOutputPath = (base: string, output?: string) => {
   return join(base, output);
 };
 
+const getComponentLogLabel = (component: IComponent) => {
+  if (component.kind === ComponentIDType.WORLD) return "world";
+  if (component.name && component.name.length > 0) return component.name;
+  return ComponentIDType.toShortString(component.kind);
+};
+
+const flushLogBuffer = (buffer: string, prefix: string, isError: boolean) => {
+  if (!buffer.length) return "";
+  const normalized = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const parts = normalized.split("\n");
+  const remainder = parts.pop() ?? "";
+  for (const part of parts) {
+    safeLog(`${prefix} ${part}`, isError);
+  }
+  return remainder;
+};
+
+const streamPrefixedLines = async (
+  stream: ReadableStream<Uint8Array> | null,
+  prefix: string,
+  isError: boolean,
+) => {
+  if (!stream) return;
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = flushLogBuffer(buffer, prefix, isError);
+  }
+  buffer += decoder.decode();
+  if (buffer.length) {
+    safeLog(`${prefix} ${buffer}`, isError);
+  }
+};
+
+const streamComponentLogs = async (
+  child: Deno.CommandChild,
+  component: IComponent,
+) => {
+  const prefix = `[${getComponentLogLabel(component)}]`;
+  await Promise.all([
+    streamPrefixedLines(child.stdout, prefix, false),
+    streamPrefixedLines(child.stderr, prefix, true),
+  ]);
+};
+
+const runBuildCommand = async (
+  component: IComponent,
+  command: Deno.Command,
+  failureMessage: string,
+) => {
+  if (STREAM_COMPONENT_LOGS) {
+    const child = command.spawn();
+    const [status] = await Promise.all([
+      child.status,
+      streamComponentLogs(child, component),
+    ]);
+    if (!status.success) {
+      warn(`${failureMessage} (exit code ${status.code})`);
+    }
+    return status.success;
+  }
+  const output = await command.output();
+  if (!output.success) {
+    const msg = new TextDecoder().decode(output.stderr) || failureMessage;
+    warn(msg.trim());
+  }
+  return output.success;
+};
+
 const runBuild = async (
   component: IComponent,
   workdir: string,
@@ -528,6 +604,7 @@ const runBuild = async (
         .catch(() => false);
       const baseCmd = useGradlew ? `./gradlew` : `gradle`;
       const gradleCmd = `${baseCmd} ${task} --console=plain`;
+      const gradleUserHome = join(absWorkdir, ".gradle");
       const { uid, gid, username } = getLocalIdentity();
       const userArgs = [
         "-u",
@@ -538,6 +615,8 @@ const runBuild = async (
         `LOCAL_GID=${gid}`,
         "-e",
         `LOCAL_USER=${username}`,
+        "-e",
+        `GRADLE_USER_HOME=${gradleUserHome}`,
       ];
       const dockerCmd = new Deno.Command("docker", {
         args: [
@@ -560,11 +639,13 @@ const runBuild = async (
         stdout: "piped",
         stderr: "piped",
       });
-      const output = await dockerCmd.output();
-      if (!output.success) {
-        const msg = new TextDecoder().decode(output.stderr) ||
-          "Gradle build failed";
-        warn(msg.trim());
+      const success = await runBuildCommand(
+        component,
+        dockerCmd,
+        "Gradle build failed",
+      );
+      if (!success) {
+        throw new Error("Gradle build failed");
       }
       return resolveOutputPath(absWorkdir, build.output);
     }
@@ -606,11 +687,13 @@ const runBuild = async (
         stdout: "piped",
         stderr: "piped",
       });
-      const output = await dockerCmd.output();
-      if (!output.success) {
-        const msg = new TextDecoder().decode(output.stderr) ||
-          "Custom build failed";
-        warn(msg.trim());
+      const success = await runBuildCommand(
+        component,
+        dockerCmd,
+        "Custom build failed",
+      );
+      if (!success) {
+        throw new Error("Custom build failed");
       }
       return resolveOutputPath(base, build.output);
     }
@@ -694,8 +777,8 @@ const pickArtifactFile = async (
   }
 
   if (candidates.length === 0) return undefined;
-  candidates.sort((a, b) =>
-    b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name)
+  candidates.sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || a.name.localeCompare(b.name),
   );
   return join(basePath, candidates[0].name);
 };
@@ -719,7 +802,7 @@ const applyComponents = async (
   const components = properties
     .getComponentsAsArray()
     .filter((component) =>
-      selected ? selected.has(toComponentId(component)) : true
+      selected ? selected.has(toComponentId(component)) : true,
     );
   if (components.length === 0) {
     info("No components matched the selected filters.");
@@ -744,15 +827,14 @@ const applyComponents = async (
     status.start(component.name, "resolving");
     const componentId = toComponentId(component);
     try {
-      const localPromise = component.kind === ComponentIDType.WORLD
-        ? ensureWorldSource(component)
-        : ensureLocalPresence(component);
+      const localPromise =
+        component.kind === ComponentIDType.WORLD
+          ? ensureWorldSource(component)
+          : ensureLocalPresence(component);
       let localPath: string | undefined;
       try {
-        localPath = await withTimeout(
-          localPromise,
-          60000,
-          () => status.update(component.name, "resolving (timeout)"),
+        localPath = await withTimeout(localPromise, 60000, () =>
+          status.update(component.name, "resolving (timeout)"),
         );
       } catch (error) {
         status.fail(component.name, `source error: ${error}`);
@@ -793,11 +875,12 @@ const applyComponents = async (
         artifact.type !== "dir" &&
         artifact.type !== "raw"
       ) {
-        const exts = artifact.type === "jar"
-          ? [".jar"]
-          : artifact.type === "zip"
-          ? [".zip"]
-          : [];
+        const exts =
+          artifact.type === "jar"
+            ? [".jar"]
+            : artifact.type === "zip"
+              ? [".zip"]
+              : [];
         const picked = await pickArtifactFile(
           artifactPath,
           exts,
@@ -980,7 +1063,9 @@ const discoverUnregisteredComponents = async (
 ): Promise<Map<ComponentIDString, UnregisteredComponentEntry>> => {
   const entries = new Map<ComponentIDString, UnregisteredComponentEntry>();
   const registeredIds = new Set(
-    properties.getComponentsAsArray().map((component) => toComponentId(component)),
+    properties
+      .getComponentsAsArray()
+      .map((component) => toComponentId(component)),
   );
 
   try {
@@ -998,7 +1083,7 @@ const discoverUnregisteredComponents = async (
 
   if (!registeredIds.has("world" as ComponentIDString)) {
     const worldPath = resolveLocalComponentPath(ComponentIDType.WORLD);
-    if (worldPath && await pathExists(worldPath)) {
+    if (worldPath && (await pathExists(worldPath))) {
       entries.set("world", {
         id: "world",
         type: ComponentIDType.WORLD,
@@ -1025,22 +1110,36 @@ const runGitCommand = async (
     });
     const output = await cmd.output();
     if (!output.success) return { success: false, stdout: "" };
-    return { success: true, stdout: gitTextDecoder.decode(output.stdout).trim() };
+    return {
+      success: true,
+      stdout: gitTextDecoder.decode(output.stdout).trim(),
+    };
   } catch {
     return { success: false, stdout: "" };
   }
 };
 
-const detectComponentSource = async (relativePath: string): Promise<SourceConfig | undefined> => {
+const detectComponentSource = async (
+  relativePath: string,
+): Promise<SourceConfig | undefined> => {
   const absPath = await Deno.realPath(relativePath).catch(() => undefined);
   if (!absPath) {
-    console.warn(`Path "${relativePath}" does not exist; unable to determine source.`);
+    console.warn(
+      `Path "${relativePath}" does not exist; unable to determine source.`,
+    );
     return undefined;
   }
 
-  const gitStatus = await runGitCommand(absPath, ["rev-parse", "--is-inside-work-tree"]);
+  const gitStatus = await runGitCommand(absPath, [
+    "rev-parse",
+    "--is-inside-work-tree",
+  ]);
   if (gitStatus.success && gitStatus.stdout === "true") {
-    const remote = await runGitCommand(absPath, ["config", "--get", "remote.origin.url"]);
+    const remote = await runGitCommand(absPath, [
+      "config",
+      "--get",
+      "remote.origin.url",
+    ]);
     if (remote.success && remote.stdout.length > 0) {
       return { type: "git", url: remote.stdout };
     }
@@ -1070,14 +1169,14 @@ const formatSourceSummary = (
       }
       case "git": {
         const branch = source.branch ? `+${source.branch}` : "";
-        const commit = !branch && source.commit
-          ? `@${source.commit.slice(0, 7)}`
-          : "";
+        const commit =
+          !branch && source.commit ? `@${source.commit.slice(0, 7)}` : "";
         const label = branch || commit ? `git${branch || commit}` : "git";
         return `${label} ${source.url}`;
       }
       case "http": {
-        const isZip = component?.artifact?.type === "zip" ||
+        const isZip =
+          component?.artifact?.type === "zip" ||
           Boolean(component?.artifact?.unzip) ||
           source.url.toLowerCase().endsWith(".zip");
         const label = isZip ? "http(zip)" : "http";
@@ -1173,7 +1272,7 @@ const renderComponentInventory = async () => {
       console.log(`${group.label}: (none)`);
     } else {
       group.entries.sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       );
       const nameWidth = group.entries.reduce(
         (width, entry) => Math.max(width, entry.name.length),
@@ -1278,18 +1377,16 @@ const promptComponentsForUpdate = async (): Promise<
     }
     const options = defined.map((component) => {
       const id = toComponentId(component);
-      const groupLabel = COMPONENT_GROUPS.find((g) =>
-        g.type === component.kind
-      )?.label ??
+      const groupLabel =
+        COMPONENT_GROUPS.find((g) => g.type === component.kind)?.label ??
         component.kind;
       const summary = formatSourceSummary(
         component,
         component.kind,
         component.name,
       );
-      const label = component.kind === ComponentIDType.WORLD
-        ? "world"
-        : component.name;
+      const label =
+        component.kind === ComponentIDType.WORLD ? "world" : component.name;
       return {
         value: id,
         label: `${label} (${groupLabel})`,
@@ -1336,12 +1433,13 @@ const promptComponentsForImport = async (
   }
 
   const sorted = [...unregistered.values()].sort((a, b) =>
-    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, { sensitivity: "base" })
+    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, {
+      sensitivity: "base",
+    }),
   );
   const options = sorted.map((entry) => {
-    const label = entry.type === ComponentIDType.WORLD
-      ? "world"
-      : entry.name ?? entry.id;
+    const label =
+      entry.type === ComponentIDType.WORLD ? "world" : (entry.name ?? entry.id);
     const groupLabel = getComponentGroupLabel(entry.type);
     return {
       value: entry.id,
@@ -1352,7 +1450,8 @@ const promptComponentsForImport = async (
 
   const prompts = await import("npm:@clack/prompts");
   const selection = await prompts.multiselect({
-    message: "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",
+    message:
+      "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",
     options,
     required: true,
   });
@@ -1388,14 +1487,14 @@ const runComponentsUpdate = async (
 
     try {
       const currentComponents = await readComponents("./components");
-      const unregisteredComponents = currentComponents.filter((component) =>
-        !availableIds.has(component)
+      const unregisteredComponents = currentComponents.filter(
+        (component) => !availableIds.has(component),
       );
       if (unregisteredComponents.length) {
         console.warn(
-          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
-            unregisteredComponents.join(", ")
-          }`,
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${unregisteredComponents.join(
+            ", ",
+          )}`,
         );
       }
     } catch (error) {
@@ -1412,11 +1511,9 @@ const runComponentsUpdate = async (
       }
       if (missing.length) {
         console.warn(
-          `The following components are not registered and were skipped: ${
-            missing.join(
-              ", ",
-            )
-          }`,
+          `The following components are not registered and were skipped: ${missing.join(
+            ", ",
+          )}`,
         );
       }
       if (!matched.length) {
@@ -1449,7 +1546,9 @@ const registerImportedComponent = (
         return false;
       }
       component.datapacks ??= [];
-      component.datapacks.push(new Datapack(entry.name, undefined, baseOptions));
+      component.datapacks.push(
+        new Datapack(entry.name, undefined, baseOptions),
+      );
       return true;
     case ComponentIDType.PLUGINS:
       if (!entry.name) {
@@ -1515,9 +1614,9 @@ const runComponentsImport = async (
     const missing = selectionFromArgs.filter((id) => !unregistered.has(id));
     if (missing.length) {
       console.warn(
-        `The following components are not available for import: ${
-          missing.join(", ")
-        }`,
+        `The following components are not available for import: ${missing.join(
+          ", ",
+        )}`,
       );
     }
     targetIds = selectionFromArgs.filter((id) => unregistered.has(id));
