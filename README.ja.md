@@ -71,3 +71,7 @@ Minecraft サーバー用コンテナを制御。`start` 後は自動で `docker
 - [Git](https://git-scm.com/)
 - [Deno](https://deno.land/)
 - [Docker](https://www.docker.com/)
+
+## プラットフォーム注意事項
+
+- Windows ホストでは Docker Desktop がファイル共有を root 権限でマウントするため、権限不一致を避ける目的で CRTB は自動的にコンテナを `root` ユーザーで実行します。macOS / Linux ホストでは従来通り UID/GID をホストユーザーに合わせて実行します。

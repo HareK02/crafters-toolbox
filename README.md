@@ -20,3 +20,7 @@ CRTB is a tool for Minecraft:Java Edition that helps you create and manage your 
 - [Git](https://git-scm.com/)
 - [Deno](https://deno.land/)
 - [Docker](https://www.docker.com/).
+
+## Platform Notes
+
+- Windows hosts: Docker Desktop exposes bind mounts as root-owned inside the VM, so CRTB automatically runs its containers as `root` on Windows to avoid permission mismatches. UID/GID mapping remains enabled on macOS and Linux hosts.

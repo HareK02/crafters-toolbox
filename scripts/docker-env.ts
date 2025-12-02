@@ -1,16 +1,24 @@
+const HOST_SUPPORTS_POSIX_IDS = Deno.build.os !== "windows";
+
+function fallbackPosixId() {
+  return HOST_SUPPORTS_POSIX_IDS ? 1000 : 0;
+}
+
 function safeUid() {
+  if (!HOST_SUPPORTS_POSIX_IDS) return 0;
   try {
     return Deno.uid();
   } catch (_) {
-    return 1000;
+    return fallbackPosixId();
   }
 }
 
 function safeGid() {
+  if (!HOST_SUPPORTS_POSIX_IDS) return 0;
   try {
     return Deno.gid();
   } catch (_) {
-    return 1000;
+    return fallbackPosixId();
   }
 }
 
