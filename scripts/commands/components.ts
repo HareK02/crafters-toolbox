@@ -19,7 +19,7 @@ import {
 } from "../component.ts";
 import { readComponents } from "../components_reader.ts";
 import { getJavaImage, loadConfig } from "../config.ts";
-import { getLocalIdentity } from "../docker-env.ts";
+import { getLocalIdentity, HOST_SUPPORTS_POSIX_IDS } from "../docker-env.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
 import { isTerminal } from "../terminal/tty.ts";
 import { DeploymentManifest } from "../deployment/manifest.ts";
@@ -30,6 +30,27 @@ const STREAM_COMPONENT_LOGS = !(
   Deno.env.get("CRTB_COMPONENTS_STREAM_LOGS") === "0"
 );
 const IS_TTY = !STREAM_COMPONENT_LOGS && isTerminal(Deno.stdout);
+type LocalIdentity = ReturnType<typeof getLocalIdentity>;
+
+const buildIdentityArgs = (
+  identity: LocalIdentity,
+  extraEnv: string[] = [],
+) => {
+  const args = [
+    "-e",
+    `LOCAL_UID=${identity.uid}`,
+    "-e",
+    `LOCAL_GID=${identity.gid}`,
+    "-e",
+    `LOCAL_USER=${identity.username}`,
+    ...extraEnv,
+  ];
+  if (HOST_SUPPORTS_POSIX_IDS) {
+    args.unshift(`${identity.uid}:${identity.gid}`);
+    args.unshift("-u");
+  }
+  return args;
+};
 
 class AsyncLock {
   #mutex: Promise<void> = Promise.resolve();
@@ -128,15 +149,16 @@ const createStatusManager = (totalCount: number) => {
     names.forEach((name) => {
       const state = states.get(name);
       if (!state) return;
-      const icon =
-        state.state === "running"
-          ? spinner.frames[state.frame % spinner.frames.length]
-          : state.state === "succeed"
-            ? "✓"
-            : "✗";
-      const label = `${name.padEnd(maxName)} [${state.phase.padEnd(
-        10,
-      )} ${icon}]`;
+      const icon = state.state === "running"
+        ? spinner.frames[state.frame % spinner.frames.length]
+        : state.state === "succeed"
+        ? "✓"
+        : "✗";
+      const label = `${name.padEnd(maxName)} [${
+        state.phase.padEnd(
+          10,
+        )
+      } ${icon}]`;
       lines.push(`  ${label}`);
     });
 
@@ -268,10 +290,9 @@ const resolveWorldPath = (
   levelName: string,
 ): string => {
   const config = DEPLOY_CONFIGS[serverType];
-  const base =
-    config?.worldContainer === "worlds"
-      ? join(GAME_SERVER_ROOT, "worlds")
-      : GAME_SERVER_ROOT;
+  const base = config?.worldContainer === "worlds"
+    ? join(GAME_SERVER_ROOT, "worlds")
+    : GAME_SERVER_ROOT;
   return join(base, levelName);
 };
 
@@ -301,8 +322,8 @@ const downloadTo = async (
       warn(`Failed to download ${url} (status: ${res.status})`);
       return false;
     }
-    const fileName =
-      basename(new URL(url).pathname) || fallbackName.replace(/[/\\]/g, "");
+    const fileName = basename(new URL(url).pathname) ||
+      fallbackName.replace(/[/\\]/g, "");
     await Deno.mkdir(destDir, { recursive: true });
     await Deno.writeFile(
       join(destDir, fileName),
@@ -431,8 +452,8 @@ const ensureLocalPresence = async (
     const checkoutArgs = source.commit
       ? ["git", "-C", repoDir, "checkout", source.commit]
       : source.branch
-        ? ["git", "-C", repoDir, "checkout", source.branch]
-        : undefined;
+      ? ["git", "-C", repoDir, "checkout", source.branch]
+      : undefined;
 
     const exists = await Deno.stat(repoDir)
       .then(() => true)
@@ -605,19 +626,11 @@ const runBuild = async (
       const baseCmd = useGradlew ? `./gradlew` : `gradle`;
       const gradleCmd = `${baseCmd} ${task} --console=plain`;
       const gradleUserHome = join(absWorkdir, ".gradle");
-      const { uid, gid, username } = getLocalIdentity();
-      const userArgs = [
-        "-u",
-        `${uid}:${gid}`,
-        "-e",
-        `LOCAL_UID=${uid}`,
-        "-e",
-        `LOCAL_GID=${gid}`,
-        "-e",
-        `LOCAL_USER=${username}`,
+      const identity = getLocalIdentity();
+      const userArgs = buildIdentityArgs(identity, [
         "-e",
         `GRADLE_USER_HOME=${gradleUserHome}`,
-      ];
+      ]);
       const dockerCmd = new Deno.Command("docker", {
         args: [
           "run",
@@ -655,17 +668,8 @@ const runBuild = async (
           ? build.workdir
           : join(absWorkdir, build.workdir)
         : absWorkdir;
-      const { uid, gid, username } = getLocalIdentity();
-      const userArgs = [
-        "-u",
-        `${uid}:${gid}`,
-        "-e",
-        `LOCAL_UID=${uid}`,
-        "-e",
-        `LOCAL_GID=${gid}`,
-        "-e",
-        `LOCAL_USER=${username}`,
-      ];
+      const identity = getLocalIdentity();
+      const userArgs = buildIdentityArgs(identity);
       const dockerCmd = new Deno.Command("docker", {
         args: [
           "run",
@@ -802,7 +806,7 @@ const applyComponents = async (
   const components = properties
     .getComponentsAsArray()
     .filter((component) =>
-      selected ? selected.has(toComponentId(component)) : true,
+      selected ? selected.has(toComponentId(component)) : true
     );
   if (components.length === 0) {
     info("No components matched the selected filters.");
@@ -827,14 +831,15 @@ const applyComponents = async (
     status.start(component.name, "resolving");
     const componentId = toComponentId(component);
     try {
-      const localPromise =
-        component.kind === ComponentIDType.WORLD
-          ? ensureWorldSource(component)
-          : ensureLocalPresence(component);
+      const localPromise = component.kind === ComponentIDType.WORLD
+        ? ensureWorldSource(component)
+        : ensureLocalPresence(component);
       let localPath: string | undefined;
       try {
-        localPath = await withTimeout(localPromise, 60000, () =>
-          status.update(component.name, "resolving (timeout)"),
+        localPath = await withTimeout(
+          localPromise,
+          60000,
+          () => status.update(component.name, "resolving (timeout)"),
         );
       } catch (error) {
         status.fail(component.name, `source error: ${error}`);
@@ -875,12 +880,11 @@ const applyComponents = async (
         artifact.type !== "dir" &&
         artifact.type !== "raw"
       ) {
-        const exts =
-          artifact.type === "jar"
-            ? [".jar"]
-            : artifact.type === "zip"
-              ? [".zip"]
-              : [];
+        const exts = artifact.type === "jar"
+          ? [".jar"]
+          : artifact.type === "zip"
+          ? [".zip"]
+          : [];
         const picked = await pickArtifactFile(
           artifactPath,
           exts,
@@ -1169,14 +1173,14 @@ const formatSourceSummary = (
       }
       case "git": {
         const branch = source.branch ? `+${source.branch}` : "";
-        const commit =
-          !branch && source.commit ? `@${source.commit.slice(0, 7)}` : "";
+        const commit = !branch && source.commit
+          ? `@${source.commit.slice(0, 7)}`
+          : "";
         const label = branch || commit ? `git${branch || commit}` : "git";
         return `${label} ${source.url}`;
       }
       case "http": {
-        const isZip =
-          component?.artifact?.type === "zip" ||
+        const isZip = component?.artifact?.type === "zip" ||
           Boolean(component?.artifact?.unzip) ||
           source.url.toLowerCase().endsWith(".zip");
         const label = isZip ? "http(zip)" : "http";
@@ -1272,7 +1276,7 @@ const renderComponentInventory = async () => {
       console.log(`${group.label}: (none)`);
     } else {
       group.entries.sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
       );
       const nameWidth = group.entries.reduce(
         (width, entry) => Math.max(width, entry.name.length),
@@ -1377,16 +1381,18 @@ const promptComponentsForUpdate = async (): Promise<
     }
     const options = defined.map((component) => {
       const id = toComponentId(component);
-      const groupLabel =
-        COMPONENT_GROUPS.find((g) => g.type === component.kind)?.label ??
+      const groupLabel = COMPONENT_GROUPS.find((g) =>
+        g.type === component.kind
+      )?.label ??
         component.kind;
       const summary = formatSourceSummary(
         component,
         component.kind,
         component.name,
       );
-      const label =
-        component.kind === ComponentIDType.WORLD ? "world" : component.name;
+      const label = component.kind === ComponentIDType.WORLD
+        ? "world"
+        : component.name;
       return {
         value: id,
         label: `${label} (${groupLabel})`,
@@ -1435,11 +1441,12 @@ const promptComponentsForImport = async (
   const sorted = [...unregistered.values()].sort((a, b) =>
     (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, {
       sensitivity: "base",
-    }),
+    })
   );
   const options = sorted.map((entry) => {
-    const label =
-      entry.type === ComponentIDType.WORLD ? "world" : (entry.name ?? entry.id);
+    const label = entry.type === ComponentIDType.WORLD
+      ? "world"
+      : (entry.name ?? entry.id);
     const groupLabel = getComponentGroupLabel(entry.type);
     return {
       value: entry.id,
@@ -1492,9 +1499,11 @@ const runComponentsUpdate = async (
       );
       if (unregisteredComponents.length) {
         console.warn(
-          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${unregisteredComponents.join(
-            ", ",
-          )}`,
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
+            unregisteredComponents.join(
+              ", ",
+            )
+          }`,
         );
       }
     } catch (error) {
@@ -1511,9 +1520,11 @@ const runComponentsUpdate = async (
       }
       if (missing.length) {
         console.warn(
-          `The following components are not registered and were skipped: ${missing.join(
-            ", ",
-          )}`,
+          `The following components are not registered and were skipped: ${
+            missing.join(
+              ", ",
+            )
+          }`,
         );
       }
       if (!matched.length) {
@@ -1614,9 +1625,11 @@ const runComponentsImport = async (
     const missing = selectionFromArgs.filter((id) => !unregistered.has(id));
     if (missing.length) {
       console.warn(
-        `The following components are not available for import: ${missing.join(
-          ", ",
-        )}`,
+        `The following components are not available for import: ${
+          missing.join(
+            ", ",
+          )
+        }`,
       );
     }
     targetIds = selectionFromArgs.filter((id) => unregistered.has(id));

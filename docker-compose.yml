@@ -4,7 +4,7 @@ x-base-service: &base-service
   build: docker
   tty: true
   stdin_open: true
-  user: "${LOCAL_UID}:${LOCAL_GID}"
+  user: "${LOCAL_USERMAP}"
   environment:
     - LOCAL_UID=${LOCAL_UID}
     - LOCAL_GID=${LOCAL_GID}

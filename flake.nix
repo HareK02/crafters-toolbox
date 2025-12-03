@@ -27,6 +27,7 @@
             gradle
             kotlin
             unzip
+            deno
           ];
 
           # 必要に応じて環境変数を設定

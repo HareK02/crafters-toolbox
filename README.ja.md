@@ -74,4 +74,4 @@ Minecraft サーバー用コンテナを制御。`start` 後は自動で `docker
 
 ## プラットフォーム注意事項
 
-- Windows ホストでは Docker Desktop がファイル共有を root 権限でマウントするため、権限不一致を避ける目的で CRTB は自動的にコンテナを `root` ユーザーで実行します。macOS / Linux ホストでは従来通り UID/GID をホストユーザーに合わせて実行します。
+- Windows ホストでは Docker Desktop がファイル共有を root 権限でマウントするため、CRTB はデフォルトで WSL の既定ディストリビューションに問い合わせて UID/GID/ユーザー名を取得し、そのユーザーとしてコンテナを実行します。これにより Linux 環境 (例: WSL で開いている作業ディレクトリ) と同じ所有者でファイルが作成され、追加の手順は不要です。WSL が使えない、もしくは別のユーザーを使いたい場合は `CRTB_HOST_UID` / `CRTB_HOST_GID` / `CRTB_HOST_USER` を設定すると任意の ID を優先できます。macOS / Linux ホストでは従来通り UID/GID を自動検出して実行します。

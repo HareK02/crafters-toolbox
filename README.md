@@ -23,4 +23,4 @@ CRTB is a tool for Minecraft:Java Edition that helps you create and manage your 
 
 ## Platform Notes
 
-- Windows hosts: Docker Desktop exposes bind mounts as root-owned inside the VM, so CRTB automatically runs its containers as `root` on Windows to avoid permission mismatches. UID/GID mapping remains enabled on macOS and Linux hosts.
+- Windows hosts: Docker Desktop exposes bind mounts as root-owned inside the VM, so CRTB automatically asks your default WSL distribution for its UID/GID/username and impersonates that identity inside the containers. This keeps generated files writable by your usual WSL user without changing any workflow. If WSL is unavailable or you prefer a different mapping, you can override it with `CRTB_HOST_UID`, `CRTB_HOST_GID`, and (optionally) `CRTB_HOST_USER` before running `crtb`. In that case the provided IDs are forwarded to Docker even on Windows.
