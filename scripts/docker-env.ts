@@ -1,3 +1,5 @@
+import { getSSHConfig, loadConfig } from "./config.ts";
+
 const HOST_HAS_NATIVE_POSIX_IDS = Deno.build.os !== "windows";
 
 const CUSTOM_UID = parseNumericEnv("CRTB_HOST_UID");
@@ -81,6 +83,8 @@ export function getUserSpec(uid: number, gid: number) {
 export function getComposeEnv() {
   const { uid, gid, username } = getLocalIdentity();
   const userSpec = getUserSpec(uid, gid);
+  const config = loadConfig();
+  const sshConfig = getSSHConfig(config);
 
   return {
     LOCAL_UID: `${uid}`,
@@ -90,6 +94,9 @@ export function getComposeEnv() {
     MEM_MAX: Deno.env.get("MEM_MAX") ?? "4G",
     SSH_PORT: Deno.env.get("SSH_PORT") ?? "2222",
     MONITOR_SUMMARY_INTERVAL: Deno.env.get("MONITOR_SUMMARY_INTERVAL") ?? "300",
+    SSH_ENABLE_PASSWORD_AUTH: sshConfig.passwordAuth.enabled ? "true" : "false",
+    SSH_PASSWORD: sshConfig.passwordAuth.value ?? "",
+    SSH_ENABLE_KEY_AUTH: sshConfig.keyAuth.enabled ? "true" : "false",
   };
 }
 

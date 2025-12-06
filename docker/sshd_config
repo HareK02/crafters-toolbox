@@ -6,7 +6,8 @@ AuthorizedKeysFile {{AUTHORIZED_KEYS_PATH}}
 PidFile {{SSHD_PID_FILE}}
 UsePrivilegeSeparation no
 StrictModes no
-PasswordAuthentication no
+PasswordAuthentication {{SSH_PASSWORD_AUTH}}
+PubkeyAuthentication {{SSH_PUBKEY_AUTH}}
 ChallengeResponseAuthentication no
 PermitEmptyPasswords no
 AllowTcpForwarding no

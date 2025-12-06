@@ -9,10 +9,15 @@ components:
         type: http
         url: >-
           https://ci.athion.net/job/FastAsyncWorldEdit/1217/artifact/artifacts/FastAsyncWorldEdit-Paper-2.14.1-SNAPSHOT-1217.jar
-    hcu-lib:
+    luckperms:
+      source:
+        type: http
+        url: >-
+          https://cdn.modrinth.com/data/Vebnzrzj/versions/OrIs0S6b/LuckPerms-Bukkit-5.5.17.jar
+    hcu-core:
       source:
         type: git
-        url: "git@gitea.hareworks.net:hcu/hcu-lib.git"
+        url: "git@gitea.hareworks.net:hcu/hcu-core.git"
       build:
         type: gradle
         task: shadowJar
@@ -31,10 +36,10 @@ components:
         type: jar
         path: build/libs
         pattern: '-min\.jar$'
-    mcdb:
+    npc-mannequin:
       source:
         type: git
-        url: "git@gitea.hareworks.net:Hare/simply-minecraft-db.git"
+        url: "git@gitea.hareworks.net:Hare/npc-mannequin.git"
       build:
         type: gradle
         task: shadowJar
@@ -42,10 +47,17 @@ components:
         type: jar
         path: build/libs
         pattern: '-min\.jar$'
-    luckperms:
+    GhostDisplays:
       source:
-        type: http
-        url: "https://cdn.modrinth.com/data/Vebnzrzj/versions/OrIs0S6b/LuckPerms-Bukkit-5.5.17.jar"
+        type: git
+        url: "git@gitea.hareworks.net:Hare/GhostDisplays.git"
+      build:
+        type: gradle
+        task: shadowJar
+      artifact:
+        type: jar
+        path: build/libs
+        pattern: '-min\.jar$'
   resourcepacks:
     hoge:
       source:

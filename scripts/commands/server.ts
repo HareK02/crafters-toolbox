@@ -24,11 +24,7 @@ async function runCompose(args: string[]) {
   return status.success;
 }
 
-function parseBuildFlag(args: string[]) {
-  const build = args.includes("--build");
-  const unknown = args.filter((arg) => arg !== "--build");
-  return { build, unknown };
-}
+
 
 async function showStatusMessage() {
   const status = await getComposeServiceStatus(GAME_SERVICE);
@@ -51,26 +47,12 @@ const serverCommand: Command = {
     {
       name: "start",
       description:
-        "Start the game server container in detached mode, then attach its console (use --build to rebuild)",
-      handler: async (args: string[]) => {
+        "Start the game server container in detached mode, then attach its console",
+      handler: async (_args: string[]) => {
         if (!(await dockerTest())) return;
-        const { build, unknown } = parseBuildFlag(args);
-        if (unknown.length) {
-          console.error(
-            `Unknown option(s): ${
-              unknown.join(", ")
-            }. Only --build is supported.`,
-          );
-          return;
-        }
-        const composeArgs = ["up"];
-        if (build) composeArgs.push("--build");
-        composeArgs.push("-d", GAME_SERVICE);
-        console.log(
-          `Starting ${GAME_SERVICE} in detached mode${
-            build ? " with rebuild" : ""
-          }...`,
-        );
+
+        const composeArgs = ["up", "-d", GAME_SERVICE];
+        console.log(`Starting ${GAME_SERVICE} in detached mode...`);
         const started = await runCompose(composeArgs);
         if (started) await maybeAttachGameConsole();
       },

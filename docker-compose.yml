@@ -1,25 +1,24 @@
-version: "3.0"
-
 x-base-service: &base-service
-  build: docker
   tty: true
   stdin_open: true
   user: "${LOCAL_USERMAP}"
-  environment:
-    - LOCAL_UID=${LOCAL_UID}
-    - LOCAL_GID=${LOCAL_GID}
-    - LOCAL_USER=${LOCAL_USER}
+  environment: &base-env
+    LOCAL_UID: ${LOCAL_UID}
+    LOCAL_GID: ${LOCAL_GID}
+    LOCAL_USER: ${LOCAL_USER}
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
 services:
   game-server:
     <<: *base-service
+    image: crafters-toolbox:latest
+    entrypoint: ["start-game"]
     container_name: crafters-toolbox-game
     restart: unless-stopped
     environment:
-      - SERVICE_ROLE=game
-      - MEM_MAX=${MEM_MAX}
+      <<: *base-env
+      MEM_MAX: ${MEM_MAX}
     volumes:
       - ./server:/home/container/server
     ports:
@@ -27,21 +26,21 @@ services:
 
   ssh-server:
     <<: *base-service
+    image: crafters-toolbox:latest
+    entrypoint: ["start-ssh"]
     container_name: crafters-toolbox-ssh
+    user: "0:0"
     environment:
-      - SERVICE_ROLE=ssh
-      - SSH_PORT=${SSH_PORT:-2222}
-      - LOCAL_USER=${LOCAL_USER}
+      <<: *base-env
+      SSH_PORT: ${SSH_PORT:-2222}
+      SSH_ENABLE_PASSWORD_AUTH: ${SSH_ENABLE_PASSWORD_AUTH:-false}
+      SSH_ENABLE_KEY_AUTH: ${SSH_ENABLE_KEY_AUTH:-true}
+      SSH_PASSWORD: ${SSH_PASSWORD:-}
     volumes:
       - ./components:/home/container/components
+      - ./server:/home/container/server
+      - ./.ssh:/home/container/.ssh
     ports:
       - "2222:2222"
 
-  monitor-server:
-    <<: *base-service
-    container_name: crafters-toolbox-monitor
-    environment:
-      - SERVICE_ROLE=monitor
-      - MONITOR_SUMMARY_INTERVAL=${MONITOR_SUMMARY_INTERVAL:-300}
-    volumes:
-      - ./components:/home/container/components
+

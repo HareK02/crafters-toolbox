@@ -1,26 +1,23 @@
-// command type
-export type Command = {
+import componentCmd from "./commands/components.ts";
+import helpCmd from "./commands/help.ts";
+import serverCmd from "./commands/server.ts";
+import setupCmd from "./commands/setup.ts";
+import sshCmd from "./commands/ssh.ts";
+import terminalCmd from "./commands/terminal.ts";
+
+export interface Command {
   name: string;
   description: string;
   subcommands?: Command[];
-  handler: (args: string[]) => void | Promise<void>;
-  interactiveHandler?: () => void | Promise<void>;
-};
-
-import help from "./commands/help.ts";
-import components from "./commands/components.ts";
-import setup from "./commands/setup.ts";
-import server from "./commands/server.ts";
-import ssh from "./commands/ssh.ts";
-import monitor from "./commands/monitor.ts";
-import terminal from "./commands/terminal.ts";
+  handler: (args: string[]) => Promise<void>;
+  interactiveHandler?: () => Promise<void>;
+}
 
 export const COMMANDS: Command[] = [
-  help,
-  components,
-  setup,
-  server,
-  ssh,
-  monitor,
-  terminal,
+  setupCmd,
+  serverCmd,
+  componentCmd,
+  sshCmd,
+  terminalCmd,
+  helpCmd,
 ];

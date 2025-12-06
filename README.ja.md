@@ -38,14 +38,31 @@ CRTB は Minecraft: Java Edition
 
 | --------- | ------------------------------ | | `server start/stop/restart` |
 Minecraft サーバー用コンテナを制御。`start` 後は自動で `docker attach`
-し、Ctrl+C でデタッチのみ行う | | `ssh up/down` / `ssh` | 協調作業用 SSH
-サーバーを起動／停止／状態確認。鍵は `components/.ssh/authorized_keys` に配置 |
+し、Ctrl+C でデタッチのみ行う | | `ssh start/stop/keys` / `ssh` | 協調作業用 SSH
+サーバーを起動／停止／状態確認。`ssh start --build` で SSH イメージを再ビルドし、`ssh keys` で `.ssh/authorized_keys` を操作 |
 | `components list` | `crtb.properties.yml` と `components/`
 ディレクトリを突き合わせた一覧表示 | | `components update [selector ...]` |
 指定コンポーネントのみ、あるいは全件を取得→ビルド→`server/` に配置 | |
 `terminal [game                    | ssh                                                                                                  | monitor]`
 | 稼働中コンテナへ安全にアタッチ | | `setup` | `server.jar` をダウンロード | |
 `monitor` | 監視コンテナ用の将来機能（現状は未実装のスタブ） |
+
+### SSH 設定
+
+`crtb.config.yml` の `ssh` セクションでコンテナの有効/無効や認証方式を制御できます。
+
+```yaml
+ssh:
+  enabled: true              # false にすると `crtb ssh` での起動をブロック
+  auth:
+    keys:
+      enabled: true          # 公開鍵認証の ON/OFF
+    password:
+      enabled: false         # パスワード認証の ON/OFF
+      value: ""              # 利用するログインパスワード（必須・空不可）
+```
+
+`ssh.auth.password.enabled` を `true` にした場合は `value`（平文パスワード）を必ず設定してください。空のままだと SSH コンテナ起動時にエラーで停止します。公開鍵認証を使う場合は `ssh keys add/list/remove` で `.ssh/authorized_keys` を編集できます。
 
 詳細な使い方は下記ドキュメントを参照してください。
 

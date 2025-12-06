@@ -1,5 +1,12 @@
+.direnv
 .gradle
+
+.ssh
+
 .cache
 server
 components
-.direnv
+
+docker/result
+
+*.local.*
