@@ -139,7 +139,12 @@ async function buildAndLoadImage() {
     console.log(
       "[setup] Building Docker image via `nix build .#dockerImage` (native)...",
     );
-    await runCommandOrThrow("nix", ["build", DOCKER_BUILD_TARGET], {
+    await runCommandOrThrow("nix", [
+      "--extra-experimental-features",
+      "nix-command flakes",
+      "build",
+      DOCKER_BUILD_TARGET,
+    ], {
       cwd: DOCKER_FLAKE_DIR,
       stdin: "inherit",
       stdout: "inherit",
