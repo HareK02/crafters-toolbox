@@ -77,7 +77,7 @@ export class PropertiesManager {
       }
       const extractOptions = (
         raw: {
-          reference?: unknown;
+          reference?: any;
           source?: SourceConfig;
           build?: BuildConfig;
           artifact?: ArtifactConfig;
@@ -91,8 +91,8 @@ export class PropertiesManager {
                 path: (raw.reference as { path: string }).path,
               }
               : "url" in (raw.reference as Record<string, unknown>)
-              ? { type: "http", url: (raw.reference as { url: string }).url }
-              : undefined
+                ? { type: "http", url: (raw.reference as { url: string }).url }
+                : undefined
             : undefined);
         return {
           reference: raw.reference,
@@ -131,7 +131,7 @@ export class PropertiesManager {
         });
       }
       property.components.datapacks = normalize(
-        property.components.datapacks as never,
+        property.components.datapacks as any,
         (name, opts) =>
           new Datapack(name, opts.reference, {
             source: opts.source,
@@ -140,7 +140,7 @@ export class PropertiesManager {
           }),
       );
       property.components.plugins = normalize(
-        property.components.plugins as never,
+        property.components.plugins as any,
         (name, opts) =>
           new Plugin(name, opts.reference, {
             source: opts.source,
@@ -149,7 +149,7 @@ export class PropertiesManager {
           }),
       );
       property.components.resourcepacks = normalize(
-        property.components.resourcepacks as never,
+        property.components.resourcepacks as any,
         (name, opts) =>
           new Resourcepack(name, opts.reference, {
             source: opts.source,
@@ -158,7 +158,7 @@ export class PropertiesManager {
           }),
       );
       property.components.mods = normalize(
-        property.components.mods as never,
+        property.components.mods as any,
         (name, opts) =>
           new Mod(name, opts.reference, {
             source: opts.source,

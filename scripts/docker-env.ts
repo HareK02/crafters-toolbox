@@ -82,7 +82,7 @@ export function getUserSpec(uid: number, gid: number) {
 
 export function getComposeEnv() {
   const { uid, gid, username } = getLocalIdentity();
-  const userSpec = getUserSpec(uid, gid);
+  const userSpec = getUserSpec((uid ?? 0) as number, (gid ?? 0) as number);
   const config = loadConfig();
   const sshConfig = getSSHConfig(config);
 

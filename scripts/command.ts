@@ -1,5 +1,6 @@
 import componentCmd from "./commands/components.ts";
 import helpCmd from "./commands/help.ts";
+import initCmd from "./commands/init.ts";
 import serverCmd from "./commands/server.ts";
 import setupCmd from "./commands/setup.ts";
 import sshCmd from "./commands/ssh.ts";
@@ -14,6 +15,7 @@ export interface Command {
 }
 
 export const COMMANDS: Command[] = [
+  initCmd,
   setupCmd,
   serverCmd,
   componentCmd,

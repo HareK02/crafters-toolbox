@@ -2,8 +2,13 @@ import { join } from "jsr:@std/path";
 
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
-import { getComposeEnv } from "../docker-env.ts";
-import { getComposeServiceStatus } from "../docker-compose-status.ts";
+import {
+  runContainer,
+  stopContainer,
+  getContainerStatus,
+  getContainerName,
+  getSSHServerConfig,
+} from "../docker-runner.ts";
 import { getSSHConfig, loadConfig } from "../config.ts";
 import type { ResolvedSSHConfig } from "../config.ts";
 
@@ -17,45 +22,25 @@ function resolveSSHConfig(): ResolvedSSHConfig {
   return getSSHConfig(loadConfig());
 }
 
-function parseBuildFlag(args: string[]) {
-  const build = args.includes("--build");
-  const unknown = args.filter((arg) => arg !== "--build");
-  return { build, unknown };
-}
-
-async function runCompose(args: string[]) {
-  const composeArgs = ["compose", ...args];
-  const command = new Deno.Command("docker", {
-    args: composeArgs,
-    env: getComposeEnv(),
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const process = command.spawn();
-  const status = await process.status;
-  if (!status.success) {
-    console.error("docker compose command failed");
-  }
-  return status.success;
-}
-
 async function showStatus(sshConfig: ResolvedSSHConfig) {
   if (!sshConfig.enabled) {
     console.log(SSH_DISABLED_MESSAGE);
     return;
   }
-  const status = await getComposeServiceStatus(SSH_SERVICE);
-  if (!status) {
+
+  const containerName = getContainerName(SSH_SERVICE);
+  const status = await getContainerStatus(containerName);
+
+  if (!status.exists) {
     console.log(
       "SSH server is not running. Use `crtb ssh start` to launch the collaboration SSH container.",
     );
   } else {
     console.log(
-      `ssh-server: ${status.State ?? "unknown"} (${status.Status ?? "n/a"})`,
+      `ssh-server: ${status.running ? "running" : "stopped"} (${status.state ?? "unknown"})`,
     );
-    if (status.Ports) console.log(`Ports: ${status.Ports}`);
   }
+
   const passwordState = sshConfig.passwordAuth.enabled
     ? (sshConfig.passwordAuth.value ? "enabled" : "enabled (password not set)")
     : "disabled";
@@ -205,21 +190,21 @@ async function readKeyFromFile(
   return keyLine;
 }
 
-async function startSSHContainer(options?: { build?: boolean }) {
+async function startSSHContainer() {
   const sshConfig = resolveSSHConfig();
   if (!sshConfig.enabled) {
     console.error(SSH_DISABLED_MESSAGE);
     return;
   }
   if (!(await dockerTest())) return;
-  const build = options?.build;
-  console.log(
-    `Starting ssh-server in detached mode${build ? " with rebuild" : ""}...`,
-  );
-  const composeArgs = ["up"];
-  if (build) composeArgs.push("--build");
-  composeArgs.push("-d", SSH_SERVICE);
-  await runCompose(composeArgs);
+
+  console.log("Starting ssh-server...");
+  const config = getSSHServerConfig();
+  const started = await runContainer(SSH_SERVICE, config);
+
+  if (!started) {
+    console.error("Failed to start SSH server");
+  }
 }
 
 async function stopSSHContainer() {
@@ -230,8 +215,10 @@ async function stopSSHContainer() {
     );
   }
   if (!(await dockerTest())) return;
+
   console.log("Stopping ssh-server...");
-  await runCompose(["stop", SSH_SERVICE]);
+  const containerName = getContainerName(SSH_SERVICE);
+  await stopContainer(containerName);
 }
 
 const sshCommand: Command = {
@@ -241,29 +228,15 @@ const sshCommand: Command = {
     {
       name: "start",
       description: "Start the SSH container in detached mode",
-      handler: async (args: string[]) => {
-        const { build, unknown } = parseBuildFlag(args);
-        if (unknown.length) {
-          console.error(
-            `Unknown option(s): ${unknown.join(", ")}. Only --build is supported.`,
-          );
-          return;
-        }
-        await startSSHContainer({ build });
+      handler: async (_args: string[]) => {
+        await startSSHContainer();
       },
     },
     {
       name: "up",
       description: "Alias of start (will be removed in a future release)",
-      handler: async (args: string[]) => {
-        const { build, unknown } = parseBuildFlag(args);
-        if (unknown.length) {
-          console.error(
-            `Unknown option(s): ${unknown.join(", ")}. Only --build is supported.`,
-          );
-          return;
-        }
-        await startSSHContainer({ build });
+      handler: async (_args: string[]) => {
+        await startSSHContainer();
       },
     },
     {
@@ -308,7 +281,7 @@ const sshCommand: Command = {
         {
           name: "path",
           description: "Show the location of authorized_keys",
-          handler: () => {
+          handler: async () => {
             console.log(AUTHORIZED_KEYS_FILE);
           },
         },

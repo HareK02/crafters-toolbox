@@ -1,6 +1,8 @@
 {
   "tasks": {
-    "crtb": "deno run -A main.ts"
+    "crtb": "deno run -A main.ts",
+    "compile": "deno compile -A --no-check --include docker/ --include templates/ --output crtb main.ts",
+    "install": "deno run -A installer/install.ts"
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@1"

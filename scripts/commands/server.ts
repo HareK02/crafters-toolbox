@@ -1,43 +1,31 @@
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
-import { getComposeEnv } from "../docker-env.ts";
-import { getComposeServiceStatus } from "../docker-compose-status.ts";
-import { attachServiceConsole } from "../terminal/service-console.ts";
+import {
+  runContainer,
+  stopContainer,
+  getContainerStatus,
+  getContainerName,
+  getGameServerConfig,
+  attachContainer,
+} from "../docker-runner.ts";
 import { isTerminal } from "../terminal/tty.ts";
 
 const GAME_SERVICE = "game-server";
 
-async function runCompose(args: string[]) {
-  const composeArgs = ["compose", ...args];
-  const command = new Deno.Command("docker", {
-    args: composeArgs,
-    env: getComposeEnv(),
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const process = command.spawn();
-  const status = await process.status;
-  if (!status.success) {
-    console.error("docker compose command failed");
-  }
-  return status.success;
-}
-
-
-
 async function showStatusMessage() {
-  const status = await getComposeServiceStatus(GAME_SERVICE);
-  if (!status) {
+  const containerName = getContainerName(GAME_SERVICE);
+  const status = await getContainerStatus(containerName);
+
+  if (!status.exists) {
     console.log(
       "game-server is not running. Use `crtb server start` to launch it.",
     );
     return;
   }
+
   console.log(
-    `game-server: ${status.State ?? "unknown"} (${status.Status ?? "n/a"})`,
+    `game-server: ${status.running ? "running" : "stopped"} (${status.state ?? "unknown"})`,
   );
-  if (status.Ports) console.log(`Ports: ${status.Ports}`);
 }
 
 const serverCommand: Command = {
@@ -51,10 +39,15 @@ const serverCommand: Command = {
       handler: async (_args: string[]) => {
         if (!(await dockerTest())) return;
 
-        const composeArgs = ["up", "-d", GAME_SERVICE];
-        console.log(`Starting ${GAME_SERVICE} in detached mode...`);
-        const started = await runCompose(composeArgs);
-        if (started) await maybeAttachGameConsole();
+        console.log(`Starting ${GAME_SERVICE}...`);
+        const config = getGameServerConfig();
+        const started = await runContainer(GAME_SERVICE, config);
+
+        if (started) {
+          await maybeAttachGameConsole();
+        } else {
+          console.error("Failed to start game server");
+        }
       },
     },
     {
@@ -63,7 +56,8 @@ const serverCommand: Command = {
       handler: async (_args: string[]) => {
         if (!(await dockerTest())) return;
         console.log("Stopping game-server...");
-        await runCompose(["stop", GAME_SERVICE]);
+        const containerName = getContainerName(GAME_SERVICE);
+        await stopContainer(containerName);
       },
     },
     {
@@ -72,7 +66,11 @@ const serverCommand: Command = {
       handler: async (_args: string[]) => {
         if (!(await dockerTest())) return;
         console.log("Restarting game-server...");
-        await runCompose(["restart", GAME_SERVICE]);
+        const containerName = getContainerName(GAME_SERVICE);
+        await stopContainer(containerName);
+
+        const config = getGameServerConfig();
+        await runContainer(GAME_SERVICE, config);
       },
     },
   ],
@@ -98,7 +96,8 @@ const maybeAttachGameConsole = async () => {
   }
 
   try {
-    await attachServiceConsole(GAME_SERVICE, { title: "game-server" });
+    const containerName = getContainerName(GAME_SERVICE);
+    await attachContainer(containerName);
   } catch (error) {
     console.error("Failed to attach to game-server console:", error);
   }

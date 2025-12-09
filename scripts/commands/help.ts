@@ -3,17 +3,16 @@ import { Command, COMMANDS } from "../command.ts";
 const cmd: Command = {
   name: "help",
   description: "Show help information",
-  handler: (args: string[]) => {
+  handler: async (args: string[]) => {
     if (args.length === 0) {
       console.log(
         COMMANDS.map(
           (cmd) =>
-            `- ${cmd.name}: ${cmd.description} ${
-              cmd.subcommands
-                ? `\n    subcommands ${cmd.subcommands
-                    .map((sub) => sub.name)
-                    .join(", \n    ")}`
-                : ""
+            `- ${cmd.name}: ${cmd.description} ${cmd.subcommands
+              ? `\n    subcommands ${cmd.subcommands
+                .map((sub) => sub.name)
+                .join(", \n    ")}`
+              : ""
             }`
         ).join("\n\n")
       );

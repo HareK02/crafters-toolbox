@@ -3,6 +3,7 @@ const VERSION = "0.0.1";
 import { intro, isCancel, log, outro, select } from "npm:@clack/prompts";
 
 import { Command, COMMANDS } from "./scripts/command.ts";
+import { drawStatusBar, initStatusBar, clearStatusBar } from "./scripts/terminal/status-bar.ts";
 
 const EXIT_OPTION = "__exit";
 const BACK_OPTION = "__back";
@@ -22,7 +23,7 @@ const renderBanner = () => {
 
   console.log(
     `                      [ Version: ${VERSION} | Author: Hare ]\n` +
-      "-------------------------------------------------------------------------------",
+    "-------------------------------------------------------------------------------",
   );
 };
 
@@ -61,6 +62,11 @@ const promptForSubcommand = async (command: Command) => {
 
 const runInteractiveMenu = async () => {
   renderBanner();
+
+  // Initialize status bar
+  initStatusBar();
+  drawStatusBar(`Crafter's Toolbox v${VERSION} | Press Ctrl+C to exit`);
+
   let exitRequested = false;
   while (!exitRequested) {
     const commandChoice = await select({
@@ -108,6 +114,9 @@ const runInteractiveMenu = async () => {
     }
     exitRequested = true;
   }
+
+  // Clean up status bar on exit
+  clearStatusBar();
 };
 
 const args = Deno.args;

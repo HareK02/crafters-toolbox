@@ -1,6 +1,4 @@
-import { getComposeServiceStatus } from "../docker-compose-status.ts";
-import { serviceToContainer } from "../services.ts";
-import { attachContainerConsole } from "./docker.ts";
+import { getContainerStatus, getContainerName, attachContainer } from "../docker-runner.ts";
 
 export type ServiceConsoleOptions = {
   title?: string;
@@ -10,22 +8,16 @@ export async function attachServiceConsole(
   service: string,
   options: ServiceConsoleOptions = {},
 ): Promise<boolean> {
-  const container = serviceToContainer(service);
-  if (!container) {
-    console.error(`Unable to determine container for service ${service}.`);
-    return false;
-  }
+  const containerName = getContainerName(service);
 
-  const status = await getComposeServiceStatus(service);
-  if (!status || status.State !== "running") {
+  const status = await getContainerStatus(containerName);
+  if (!status.exists || !status.running) {
     console.log(
       `${service} is not running. Start it before attaching (try \`crtb server start\`).`,
     );
     return false;
   }
 
-  await attachContainerConsole(container, {
-    title: options.title ?? service,
-  });
+  await attachContainer(containerName);
   return true;
 }

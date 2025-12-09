@@ -1,0 +1,5 @@
+server/
+components/
+.cache/
+.env
+.DS_Store
