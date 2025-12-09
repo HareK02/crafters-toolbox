@@ -21,7 +21,6 @@ import { readComponents } from "../components_reader.ts";
 import { getJavaImage, loadConfig } from "../config.ts";
 import { getLocalIdentity, HOST_SUPPORTS_POSIX_IDS } from "../docker-env.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
-import { isTerminal } from "../terminal/tty.ts";
 import { DeploymentManifest } from "../deployment/manifest.ts";
 
 const GAME_SERVER_ROOT = "./server";
@@ -29,7 +28,7 @@ const CACHE_ROOT = "./.cache/components";
 const STREAM_COMPONENT_LOGS = !(
   Deno.env.get("CRTB_COMPONENTS_STREAM_LOGS") === "0"
 );
-const IS_TTY = !STREAM_COMPONENT_LOGS && isTerminal(Deno.stdout);
+const IS_TTY = !STREAM_COMPONENT_LOGS && Deno.stdout.isTerminal();
 type LocalIdentity = ReturnType<typeof getLocalIdentity>;
 
 const buildIdentityArgs = (

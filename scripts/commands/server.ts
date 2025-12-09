@@ -1,3 +1,4 @@
+
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import {
@@ -8,7 +9,6 @@ import {
   getGameServerConfig,
   attachContainer,
 } from "../docker-runner.ts";
-import { isTerminal } from "../terminal/tty.ts";
 
 const GAME_SERVICE = "game-server";
 
@@ -87,7 +87,7 @@ const serverCommand: Command = {
 };
 
 const maybeAttachGameConsole = async () => {
-  const interactive = isTerminal(Deno.stdin) && isTerminal(Deno.stdout);
+  const interactive = Deno.stdin.isTerminal() && Deno.stdout.isTerminal();
   if (!interactive) {
     console.log(
       "game-server is running in detached mode. Use `crtb terminal game` to attach.",

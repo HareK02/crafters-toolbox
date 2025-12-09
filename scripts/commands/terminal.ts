@@ -1,7 +1,7 @@
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import { resolveServiceSelection } from "../services.ts";
-import { attachServiceConsole } from "../terminal/service-console.ts";
+import { attachContainer, getContainerName } from "../docker-runner.ts";
 
 const cmd: Command = {
   name: "terminal",
@@ -24,7 +24,8 @@ const cmd: Command = {
     }
 
     const service = services[0];
-    await attachServiceConsole(service);
+    const containerName = getContainerName(service);
+    await attachContainer(containerName);
   },
 };
 
