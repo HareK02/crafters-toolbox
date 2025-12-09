@@ -3,17 +3,25 @@
 CRTB is a tool for Minecraft:Java Edition that helps you create and manage your projects.
 
 ## Description
-
-クラフターズツールボックスは、Minecraft の様々な制作を支援する外部ツールです。
-本ツールは、MOD やデータパックの開発を支援するために設計されています。
+Crafter's Toolbox is an external toolset designed to support various aspects of Minecraft creation.
+It is specifically built to assist in the development of Mods and Datapacks.
 
 ## Features
 
-- サーバーの自動構築
-- プラグイン・Modの自動ビルド・デプロイ
-- 制作物のバージョン管理
-- コラボレーション用の ssh サーバー
-- バックアップアーカイブの作成
+- Automatic server setup and provisioning
+- Automated build and deployment for Plugins and Mods
+- Version control integration for your creations
+- SSH server for real-time collaboration
+- Creation of backup archives
+
+## Installation
+
+To install Crafter's Toolbox, run the following command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/main/install.sh | bash
+```
+
 
 ## Dependencies
 

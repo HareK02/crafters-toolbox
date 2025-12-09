@@ -1094,7 +1094,11 @@ const applyComponents = async (
           buildOutput = await runBuild(component, workPath, runnerImage);
         } catch (error) {
           status.fail(component.name, `build failed: ${error}`);
-          return;
+          return {
+            name: component.name,
+            success: false,
+            message: `Build failed: ${error}`,
+          };
         }
 
         status.update(component.name, "artifact");
@@ -1108,7 +1112,11 @@ const applyComponents = async (
           .catch(() => false);
         if (!exists) {
           status.fail(component.name, `artifact missing: ${artifactPath}`);
-          return;
+          return {
+            name: component.name,
+            success: false,
+            message: `Artifact missing: ${artifactPath}`,
+          };
         }
         let finalArtifactPath = artifactPath;
         const stat = await Deno.stat(artifactPath);
@@ -1129,7 +1137,11 @@ const applyComponents = async (
           );
           if (!picked) {
             status.fail(component.name, "artifact file not found in directory");
-            return;
+            return {
+              name: component.name,
+              success: false,
+              message: "Artifact file not found in directory",
+            };
           }
           finalArtifactPath = picked;
         }
@@ -1151,7 +1163,11 @@ const applyComponents = async (
           case ComponentIDType.WORLD: {
             if (!finalArtifactPath) {
               status.fail(component.name, "world artifact missing");
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: "World artifact missing",
+              };
             }
             await copyWorldDir(finalArtifactPath, worldPath);
             status.succeed(component.name, "deployed world");
@@ -1167,7 +1183,11 @@ const applyComponents = async (
             );
             if (!dest) {
               status.fail(component.name, "failed to deploy datapack");
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: "Failed to deploy datapack",
+              };
             }
             deployedPaths.push(await resolveAbsolutePath(dest));
             status.succeed(component.name, "deployed datapack");
@@ -1182,7 +1202,11 @@ const applyComponents = async (
             );
             if (!dest) {
               status.fail(component.name, "failed to deploy resourcepack");
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: "Failed to deploy resourcepack",
+              };
             }
             deployedPaths.push(await resolveAbsolutePath(dest));
             status.succeed(component.name, "deployed resourcepack");
@@ -1192,7 +1216,11 @@ const applyComponents = async (
           case ComponentIDType.PLUGINS: {
             if (!deployConfig.supportsPlugins) {
               status.fail(component.name, `unsupported on ${serverType}`);
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: `Unsupported on ${serverType}`,
+              };
             }
             const dest = await deployEntry(
               finalArtifactPath,
@@ -1201,7 +1229,11 @@ const applyComponents = async (
             );
             if (!dest) {
               status.fail(component.name, "failed to deploy plugin");
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: "Failed to deploy plugin",
+              };
             }
             deployedPaths.push(await resolveAbsolutePath(dest));
             status.succeed(component.name, "deployed plugin");
@@ -1211,7 +1243,11 @@ const applyComponents = async (
           case ComponentIDType.MODS: {
             if (!deployConfig.supportsMods) {
               status.fail(component.name, `unsupported on ${serverType}`);
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: `Unsupported on ${serverType}`,
+              };
             }
             const dest = await deployEntry(
               finalArtifactPath,
@@ -1220,7 +1256,11 @@ const applyComponents = async (
             );
             if (!dest) {
               status.fail(component.name, "failed to deploy mod");
-              break;
+              return {
+                name: component.name,
+                success: false,
+                message: "Failed to deploy mod",
+              };
             }
             deployedPaths.push(await resolveAbsolutePath(dest));
             status.succeed(component.name, "deployed mod");
@@ -1229,7 +1269,11 @@ const applyComponents = async (
           }
           default:
             status.fail(component.name, `unknown kind ${component.kind}`);
-            break;
+            return {
+              name: component.name,
+              success: false,
+              message: `Unknown kind ${component.kind}`,
+            };
         }
 
         if (deploymentSucceeded) {

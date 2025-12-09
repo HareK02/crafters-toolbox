@@ -12,6 +12,16 @@ CRTB は Minecraft: Java Edition
 - ゲームサーバー、SSH サーバー、監視（WIP）の 3 コンテナ構成
 - コマンドライン／インタラクティブ UI どちらでも操作可能
 - ホスト UID/GID をコンテナに反映し、ファイルパーミッションを安全に維持
+- ローカル／リモート両対応の柔軟なインストーラー
+
+## インストール
+
+以下のコマンドを実行してインストールしてください：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/main/install.sh | bash
+```
+
 
 ## クイックスタート
 
