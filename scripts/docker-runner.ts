@@ -1,3 +1,5 @@
+
+import { attachToContainer } from "./terminal/docker-attach.ts";
 import { basename } from "jsr:@std/path";
 import { getLocalIdentity, getUserSpec } from "./docker-env.ts";
 
@@ -212,7 +214,6 @@ export async function attachContainer(containerName: string): Promise<boolean> {
         return false;
     }
 
-    const { attachToContainer } = await import("./terminal/docker-attach.ts");
     await attachToContainer(containerName);
     return true;
 }
