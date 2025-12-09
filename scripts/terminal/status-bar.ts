@@ -18,10 +18,12 @@ export const ANSI = {
     // Screen control
     clearScreen: `${CSI}2J`,
     clearLine: `${CSI}2K`,
+    clearScreenDown: `${CSI}J`, // Clear from cursor to end of screen
 
     // Positioning
     moveTo: (row: number, col: number) => `${CSI}${row};${col}H`,
     moveToBottom: `${CSI}999;1H`, // Move to bottom left
+    moveUp: (count: number) => `${CSI}${count}A`,
 
     // Colors
     reset: `${CSI}0m`,
@@ -131,37 +133,19 @@ export function drawInputLine(prompt: string, input: string): void {
 }
 
 /**
- * Set the scrolling region of the terminal
- * This allows us to reserve the bottom lines for the status bar and input
- */
-export function setScrollingRegion(top: number, bottom: number): void {
-    const output = `${CSI}${top};${bottom}r`;
-    Deno.stdout.writeSync(new TextEncoder().encode(output));
-}
-
-/**
- * Reset the scrolling region to the full screen
- */
-export function resetScrollingRegion(): void {
-    const output = `${CSI}r`; // No arguments resets to full screen
-    Deno.stdout.writeSync(new TextEncoder().encode(output));
-}
-
-/**
  * Clear both input line and status bar
  */
 export function clearInputAndStatus(): void {
-    // With scrolling region, we just need to move cursor to stored position
-    // No explicit clearing needed usually, but we implement reset here
-    resetScrollingRegion();
-
     const { rows } = getTerminalSize();
+    const inputRow = rows - 1;
+
     const output =
-        ANSI.moveTo(rows - 1, 1) +
+        ANSI.saveCursor +
+        `${CSI}${inputRow};1H` +
         ANSI.clearLine +
-        ANSI.moveTo(rows, 1) +
+        ANSI.moveToBottom +
         ANSI.clearLine +
-        ANSI.showCursor; // Ensure cursor is visible
+        ANSI.restoreCursor;
 
     Deno.stdout.writeSync(new TextEncoder().encode(output));
 }
@@ -180,31 +164,21 @@ export function clearStatusBar(): void {
 }
 
 /**
- * Initialize status bar with scrolling region
+ * Initialize status bar
  */
 export function initStatusBar(): void {
-    const { rows } = getTerminalSize();
-    // Reserve bottom 2 lines (one for input, one for status)
-    // Set scrolling region from line 1 to rows-2
-    setScrollingRegion(1, rows - 2);
-
-    // Clear the screen to apply changes cleanly
-    Deno.stdout.writeSync(new TextEncoder().encode(ANSI.clearScreen));
-
-    // Move cursor to input line (second to last)
-    Deno.stdout.writeSync(new TextEncoder().encode(`${CSI}${rows - 1};1H`));
+    // Hide cursor for clean UI update
+    Deno.stdout.writeSync(new TextEncoder().encode(ANSI.hideCursor));
 
     // Set up cleanup on exit
     const cleanup = () => {
-        resetScrollingRegion();
-        clearStatusBar();
+        clearInputAndStatus();
         Deno.stdout.writeSync(new TextEncoder().encode(ANSI.showCursor));
     };
 
     // Register cleanup handlers
     globalThis.addEventListener("unload", cleanup);
 
-    // Deno.addSignalListener can throw in some environments or only allow one listener
     try {
         Deno.addSignalListener("SIGINT", cleanup);
         Deno.addSignalListener("SIGTERM", cleanup);

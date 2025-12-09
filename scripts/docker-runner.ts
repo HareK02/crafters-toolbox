@@ -213,156 +213,182 @@ export async function attachContainer(containerName: string): Promise<boolean> {
     }
 
     // Import status bar utilities
-    const { initStatusBar, drawStatusBar, drawInputLine, clearInputAndStatus, resetScrollingRegion, getTerminalSize, ANSI } = await import("./terminal/status-bar.ts");
+    const { initStatusBar, drawStatusBar, drawInputLine, getTerminalSize, ANSI } = await import("./terminal/status-bar.ts");
 
-    // Initialize status bar (sets scrolling region)
+    // Initialize status bar
     initStatusBar();
 
-    // Start docker attach process
-    const attachCommand = new Deno.Command("docker", {
-        args: ["attach", "--sig-proxy=false", containerName],
+    // Start docker logs process
+    const logsCommand = new Deno.Command("docker", {
+        args: ["logs", "-f", "--tail", "100", containerName],
         stdout: "piped",
         stderr: "piped",
-        stdin: "piped",
     });
 
-    const attachProcess = attachCommand.spawn();
-    const inputWriter = attachProcess.stdin.getWriter();
+    const logsProcess = logsCommand.spawn();
 
-    // Create a decoder for the output
+    // Start persistent input process
+    const inputCommand = new Deno.Command("docker", {
+        args: ["attach", "--detach-keys", "ctrl-c", containerName],
+        stdin: "piped",
+        stdout: "null",
+        stderr: "null",
+    });
+
+    const inputProcess = inputCommand.spawn();
+    const inputWriter = inputProcess.stdin.getWriter();
+
+    // Decoder
     const decoder = new TextDecoder();
 
-    // Input state
     let currentInput = "";
 
-    // Function to update input line only
-    const updateInputLine = () => {
-        drawInputLine("> ", currentInput);
-    };
-
-    // Function to draw static status bar (only once or on resize)
-    const drawStaticStatusBar = () => {
-        const statusText = `Container: ${containerName} | Type command and press Enter | Ctrl+C to exit`;
-        drawStatusBar(statusText);
-        updateInputLine();
-    };
-
-    // Initial draw
-    drawStaticStatusBar();
-
-    // Helper to write log with cursor preservation
-    const writeLog = (text: string) => {
+    // Function to redraw the UI at the bottom
+    const redrawUI = () => {
         const { rows } = getTerminalSize();
-        // Save cursor, move to bottom of scroll region, write, restore cursor
-        // We write to rows-2 because that's the bottom of scroll region
+        // Move to bottom-1 line, Clear to end, Draw Input, Draw Status
+        // Note: We use manual cursor controls here to be absolutely precise
         const output =
-            ANSI.saveCursor +
-            ANSI.moveTo(rows - 2, 1) +
-            text +
-            ANSI.restoreCursor;
+            ANSI.hideCursor +
+            ANSI.moveTo(rows - 1, 1) +
+            ANSI.clearScreenDown +
+            "> " + currentInput + "\n" +
+            (containerName.length > 50 ? containerName.slice(0, 50) : containerName) + " | Type command... | Ctrl+C to exit" +
+            ANSI.showCursor +
+            ANSI.moveTo(rows - 1, (currentInput.length + 3)); // Position cursor at end of input
 
         Deno.stdout.writeSync(new TextEncoder().encode(output));
     };
 
-    // Handle stdout
-    const readStdout = async () => {
-        try {
-            for await (const chunk of attachProcess.stdout) {
-                const text = decoder.decode(chunk);
-                writeLog(text);
-            }
-        } catch (error) {
-            // Stream ended
+    // Helper to write log
+    const writeLog = (text: string) => {
+        // 1. Hide Cursor
+        Deno.stdout.writeSync(new TextEncoder().encode(ANSI.hideCursor));
+
+        // 2. Move to start of Input Line (Footer start)
+        const { rows } = getTerminalSize();
+        Deno.stdout.writeSync(new TextEncoder().encode(ANSI.moveTo(rows - 1, 1)));
+
+        // 3. Clear Footer
+        Deno.stdout.writeSync(new TextEncoder().encode(ANSI.clearScreenDown));
+
+        // 4. Write Log (Trim trailing newline allows us to control the last break)
+        // If text ends with \n, and we write it, the cursor moves to next line.
+        // We want standard output behavior.
+        Deno.stdout.writeSync(new TextEncoder().encode(text));
+
+        // 5. If the last character wasn't a newline, we MUST add one
+        // otherwise the input line will be drawn on the same line as the log.
+        if (!text.endsWith("\n")) {
+            Deno.stdout.writeSync(new TextEncoder().encode("\n"));
         }
+
+        // 6. Redraw UI
+        redrawUI();
     };
 
-    // Handle stderr
-    const readStderr = async () => {
-        try {
-            for await (const chunk of attachProcess.stderr) {
-                const text = decoder.decode(chunk);
-                writeLog(text);
+    // Initial draw
+    redrawUI();
+
+    const uiInterval = setInterval(redrawUI, 1000);
+
+    // Use TextLineStream easily if available, but for now implementing a robust line reader manually
+    // to avoid dependency issues if @std/streams is not configured.
+    // If we wanted to use @std/streams:
+    // import { TextLineStream } from "jsr:@std/streams/text-line-stream";
+    // process.stdout.pipeThrough(new TextDecoderStream()).pipeThrough(new TextLineStream())
+
+    // Manual robust buffering equivalent to TextLineStream
+    const createLineProcessor = (reader: ReadableStream<Uint8Array>, onLine: (line: string) => void) => {
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        return async () => {
+            try {
+                for await (const chunk of reader) {
+                    const text = decoder.decode(chunk, { stream: true });
+                    const parts = (buffer + text).split("\n");
+                    buffer = parts.pop() || "";
+
+                    for (const line of parts) {
+                        onLine(line);
+                    }
+                }
+                // Flush remaining
+                if (buffer) {
+                    onLine(buffer);
+                }
+            } catch (error) {
+                // Ignore errors
             }
-        } catch (error) {
-            // Stream ended
-        }
+        };
     };
+
+    // Handle stdout
+    const readStdout = createLineProcessor(logsProcess.stdout, (line) => {
+        // Filter out empty lines if desired, but general logs might need them
+        writeLog(line + "\n");
+    });
+
+    // Handle stderr
+    const readStderr = createLineProcessor(logsProcess.stderr, (line) => {
+        writeLog(line + "\n");
+    });
 
     // Handle keyboard input
     const handleInput = async () => {
-        // Set stdin to raw mode
         Deno.stdin.setRaw(true);
-
         const buffer = new Uint8Array(1);
         try {
             while (true) {
                 const n = await Deno.stdin.read(buffer);
                 if (n === null) break;
-
                 const char = buffer[0];
 
-                // Ctrl+C (3)
-                if (char === 3) {
-                    break;
-                }
-                // Enter (13 or 10)
-                else if (char === 13 || char === 10) {
+                if (char === 3) break; // Ctrl+C
+
+                else if (char === 13 || char === 10) { // Enter
                     if (currentInput.trim()) {
                         const command = currentInput.trim() + "\n";
                         try {
                             await inputWriter.write(new TextEncoder().encode(command));
-                        } catch (error) {
-                            // Write failed
-                        }
+                        } catch (error) { }
                         currentInput = "";
-                        updateInputLine();
+                        redrawUI();
                     }
                 }
-                // Backspace (127 or 8)
-                else if (char === 127 || char === 8) {
+                else if (char === 127 || char === 8) { // Backspace
                     if (currentInput.length > 0) {
                         currentInput = currentInput.slice(0, -1);
-                        updateInputLine();
+                        redrawUI();
                     }
                 }
-                // Printable characters
                 else if (char >= 32 && char <= 126) {
                     currentInput += String.fromCharCode(char);
-                    updateInputLine();
+                    redrawUI();
                 }
             }
-        } catch (error) {
-            // Input ended
-        } finally {
-            Deno.stdin.setRaw(false);
-        }
+        } catch (error) { }
+        finally { Deno.stdin.setRaw(false); }
     };
 
-    // Start all async tasks
     const readPromise = Promise.all([readStdout(), readStderr()]);
     const inputPromise = handleInput();
 
-    // Wait for any to complete
     try {
-        await Promise.race([
-            attachProcess.status,
-            readPromise,
-            inputPromise,
-        ]);
+        await Promise.race([logsProcess.status, readPromise, inputPromise]);
     } catch (error) {
-        // Process ended
     } finally {
-        // Cleanup
-        resetScrollingRegion(); // CRITICAL: Reset scrolling region
-        clearInputAndStatus();
-        Deno.stdin.setRaw(false);
+        clearInterval(uiInterval);
+        // Clear footer one last time
+        const { rows } = getTerminalSize();
+        Deno.stdout.writeSync(new TextEncoder().encode(ANSI.moveTo(rows - 1, 1) + ANSI.clearScreenDown));
 
-        // Kill the attach process
+        Deno.stdin.setRaw(false);
         try {
-            attachProcess.kill("SIGTERM");
-        } catch {
-            // Process already ended
-        }
+            logsProcess.kill("SIGTERM");
+            inputProcess.kill("SIGTERM");
+        } catch { }
     }
 
     return true;
