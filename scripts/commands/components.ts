@@ -151,12 +151,13 @@ const createStatusManager = (totalCount: number) => {
       const icon = state.state === "running"
         ? spinner.frames[state.frame % spinner.frames.length]
         : state.state === "succeed"
-          ? "✓"
-          : "✗";
-      const label = `${name.padEnd(maxName)} [${state.phase.padEnd(
-        10,
-      )
-        } ${icon}]`;
+        ? "✓"
+        : "✗";
+      const label = `${name.padEnd(maxName)} [${
+        state.phase.padEnd(
+          10,
+        )
+      } ${icon}]`;
       lines.push(`  ${label}`);
     });
 
@@ -303,7 +304,9 @@ const toComponentId = (component: IComponent): ComponentIDString => {
   }
   const kind = component.kind;
   if (kind === ComponentIDType.WORLD) return "world";
-  return `${ComponentIDType.toShortString(kind)}:${component.name}` as ComponentIDString;
+  return `${
+    ComponentIDType.toShortString(kind)
+  }:${component.name}` as ComponentIDString;
 };
 
 const saveResponse = async (
@@ -385,7 +388,9 @@ const downloadToCache = async (
   // So yes, if simple update, we should skip fetch if cache exists.
   if (!forcePull && meta) {
     const cachedFile = join(contentDir, meta.filename);
-    const exists = await Deno.stat(cachedFile).then(() => true).catch(() => false);
+    const exists = await Deno.stat(cachedFile).then(() => true).catch(() =>
+      false
+    );
     if (exists) {
       return { path: contentDir, cached: true }; // Treat as OK without checking net
     }
@@ -426,7 +431,13 @@ const downloadToCache = async (
       return undefined;
     }
 
-    const path = await saveResponse(res, contentDir, metaFile, url, componentName);
+    const path = await saveResponse(
+      res,
+      contentDir,
+      metaFile,
+      url,
+      componentName,
+    );
     return { path, cached: false };
   } catch (error) {
     warn(`Unable to download ${url}: ${error}`);
@@ -541,76 +552,99 @@ const ensureLocalPresence = async (
       return { path: dest, cached: false };
     }
     if (source.type === "http") {
-      const result = await downloadToCache(source.url, component.name, options?.pull);
+      const result = await downloadToCache(
+        source.url,
+        component.name,
+        options?.pull,
+      );
       if (!result) return undefined;
       return result;
     }
     if (source.type === "git") {
-      const gitDir = join(CACHE_ROOT, "git", component.name);
-      await Deno.mkdir(gitDir, { recursive: true });
-      const repoDir = join(gitDir, "repo");
-      const cloneArgs = [
-        "git",
-        "clone",
-        "--recursive",
-        "--depth",
-        "1",
-        source.url,
-        repoDir,
-      ];
-      const updateArgs = [
-        "git",
-        "-C",
-        repoDir,
-        "pull",
-        "--ff-only",
-        "&&",
-        "git",
-        "-C",
-        repoDir,
-        "submodule",
-        "update",
-        "--init",
-        "--recursive",
-      ];
-      const checkoutArgs = source.commit
-        ? ["git", "-C", repoDir, "checkout", source.commit]
-        : source.branch
-          ? ["git", "-C", repoDir, "checkout", source.branch]
-          : undefined;
-
-      const exists = await Deno.stat(repoDir)
+      const isGit = await Deno.stat(join(dest, ".git"))
         .then(() => true)
         .catch(() => false);
-      const cmd = new Deno.Command("bash", {
-        args: ["-lc", exists ? updateArgs.join(" ") : cloneArgs.join(" ")],
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      const status = await cmd.spawn().status;
-      if (!status.success) {
-        warn(`Git fetch failed for ${component.name}`);
-        return undefined;
+      const exists = await Deno.stat(dest)
+        .then(() => true)
+        .catch(() => false);
+
+      if (exists && !isGit) {
+        // Cleanup legacy folder to replace with submodule
+        await Deno.remove(dest, { recursive: true });
       }
-      if (checkoutArgs) {
-        const checkoutCmd = new Deno.Command("bash", {
-          args: ["-lc", checkoutArgs.join(" ")],
+
+      const readyToUpdate = await Deno.stat(dest)
+        .then(() => true)
+        .catch(() => false);
+
+      if (!readyToUpdate) {
+        info(`Adding submodule for ${component.name}...`);
+        const args = ["submodule", "add", "--force"];
+        if (source.branch) args.push("-b", source.branch);
+        args.push(source.url, dest);
+
+        const cmd = new Deno.Command("git", {
+          args,
           stdout: "inherit",
           stderr: "inherit",
         });
-        const checkoutStatus = await checkoutCmd.spawn().status;
-        if (!checkoutStatus.success) {
-          warn(`Git checkout failed for ${component.name}`);
+        const status = await cmd.spawn().status;
+        if (!status.success) {
+          warn(`Failed to add submodule ${component.name}`);
+          return undefined;
+        }
+
+        // Initialize nested submodules
+        const initCmd = new Deno.Command("git", {
+          args: ["submodule", "update", "--init", "--recursive", dest],
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        await initCmd.spawn().status;
+      } else {
+        info(`Updating submodule for ${component.name}...`);
+        const cmd = new Deno.Command("git", {
+          args: [
+            "submodule",
+            "update",
+            "--init",
+            "--remote",
+            "--recursive",
+            dest,
+          ],
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        const status = await cmd.spawn().status;
+        if (!status.success) {
+          warn(`Failed to update submodule ${component.name}`);
           return undefined;
         }
       }
-      await copyToDir(repoDir, baseDir, component.name);
+
+      if (source.commit) {
+        const cmd = new Deno.Command("git", {
+          args: ["-C", dest, "checkout", source.commit],
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        await cmd.spawn().status;
+
+        // Ensure submodules match the checked out commit
+        const subCmd = new Deno.Command("git", {
+          args: ["-C", dest, "submodule", "update", "--init", "--recursive"],
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        await subCmd.spawn().status;
+      }
+
       return { path: dest, cached: false };
     }
   }
 
   // Fallback: if no source config, check if directory exists locally (if we skipped above due to pull flag, check again?)
-  // If pull=true, we skipped the early check. 
+  // If pull=true, we skipped the early check.
   // If source is missing, we try to use what's there.
   try {
     const stat = await Deno.stat(dest);
@@ -681,7 +715,11 @@ const ensureWorldSource = async (
     // The issue was ensureLocalPresence was IGNORING http because local folder existed.
     // Now ensureLocalPresence respects http unless !pull.
     // World source:
-    return downloadToCache(source.url, component.name ?? "world", options?.pull);
+    return downloadToCache(
+      source.url,
+      component.name ?? "world",
+      options?.pull,
+    );
   }
 
   if (source.type === "git") {
@@ -926,7 +964,8 @@ const runBuild = async (
     }
     default:
       warn(
-        `Unsupported build type ${(build as { type: string }).type
+        `Unsupported build type ${
+          (build as { type: string }).type
         } for ${component.name}`,
       );
       return workdir;
@@ -1128,8 +1167,8 @@ const applyComponents = async (
           const exts = artifact.type === "jar"
             ? [".jar"]
             : artifact.type === "zip"
-              ? [".zip"]
-              : [];
+            ? [".zip"]
+            : [];
           const picked = await pickArtifactFile(
             artifactPath,
             exts,
@@ -1308,7 +1347,7 @@ const applyComponents = async (
   // Actually, I'll update the loop logic in a wider scope or better yet, just iterate over results.
   // Some paths return undefined (e.g. source unavailable).
 
-  results.forEach(result => {
+  results.forEach((result) => {
     if (!result) return; // Should likely be mapped to failure if undefined? Or just skipped if it was "early exit"?
     // Based on code, early returns usually call status.fail(). So result is undefined but status is updated.
     // We need to capture the state from status manager or return explicit value.
@@ -1318,11 +1357,11 @@ const applyComponents = async (
 
   console.log(`\n${successCount} succeeded, ${failureCount} failed.\n`);
 
-  const failures = results.filter(r => r && !r.success);
+  const failures = results.filter((r) => r && !r.success);
   if (failures.length > 0) {
     console.log("Failures:");
-    failures.forEach(f => {
-      if (f) console.log(` - ${f.name}: ${f.message || 'Unknown error'}`);
+    failures.forEach((f) => {
+      if (f) console.log(` - ${f.name}: ${f.message || "Unknown error"}`);
     });
   }
   currentStatus = undefined;
@@ -1461,8 +1500,8 @@ const detectComponentSource = async (
       "--get",
       "remote.origin.url",
     ]);
-    if (remote.success && remote.stdout.length > 0) {
-      return { type: "git", url: remote.stdout };
+    if (remote.success) {
+      return { type: "git", url: remote.stdout.trim() || undefined };
     }
   }
 
@@ -1489,6 +1528,9 @@ const formatSourceSummary = (
         return source.path ? `local ${source.path}` : "local";
       }
       case "git": {
+        if (!source.url && "path" in source) {
+          return `(configuration error: use 'url' instead of 'path' for git source)`;
+        }
         const branch = source.branch ? `+${source.branch}` : "";
         const commit = !branch && source.commit
           ? `@${source.commit.slice(0, 7)}`
@@ -1588,7 +1630,9 @@ const renderComponentInventory = async () => {
   }
 
   const anyRegistered = groups.some((group) => group.entries.length > 0);
-  groups.forEach((group, index) => {
+
+  for (let index = 0; index < groups.length; index++) {
+    const group = groups[index];
     if (!group.entries.length) {
       console.log(`${group.label}: (none)`);
     } else {
@@ -1601,17 +1645,30 @@ const renderComponentInventory = async () => {
       );
       console.log(`${group.label}:`);
       for (const entry of group.entries) {
-        const summary = formatSourceSummary(
+        let summary = formatSourceSummary(
           entry.component,
           entry.type,
           entry.name,
         );
+
+        if (!entry.registered && entry.name) {
+          const path = resolveLocalComponentPath(entry.type, entry.name);
+          if (path) {
+            const detected = await detectComponentSource(path);
+            if (detected?.type === "git") {
+              const url = detected.url || "(no remote)";
+              const branch = detected.branch ? `+${detected.branch}` : "";
+              summary = `git${branch} ${url}`;
+            }
+          }
+        }
+
         const suffix = entry.registered ? "" : "  (unregistered)";
         console.log(`  - ${entry.name.padEnd(nameWidth)}  ${summary}${suffix}`);
       }
     }
     if (index < groups.length - 1) console.log("");
-  });
+  }
 
   if (!anyRegistered && combinedIds.size === 0) {
     console.log(
@@ -1685,9 +1742,9 @@ const parseComponentArgs = (
   return parsed;
 };
 
-const promptComponentsForUpdate = async (): Promise<
-  ComponentIDString[] | undefined
-> => {
+const promptComponentsForUpdate = async (
+  initialIds: ComponentIDString[] = [],
+): Promise<ComponentIDString[] | undefined> => {
   try {
     const yaml = await Deno.readTextFile("./crtb.properties.yml");
     const manager = PropertiesManager.fromYaml(yaml);
@@ -1716,15 +1773,18 @@ const promptComponentsForUpdate = async (): Promise<
         hint: truncateHint(summary),
       };
     });
+
     const prompts = await import("npm:@clack/prompts");
     const selection = await prompts.multiselect({
       message:
         "更新するコンポーネントを選択してください (Space で選択, Enter で確定)",
       options,
       required: true,
+      initialValues: initialIds,
+      cursorAt: initialIds[0],
     });
     if (prompts.isCancel(selection) || !Array.isArray(selection)) {
-      console.log("コンポーネントの選択をキャンセルしました。");
+      // console.log("コンポーネントの選択をキャンセルしました。");
       return undefined;
     }
     if (selection.length === 0) {
@@ -1749,6 +1809,7 @@ const truncateHint = (text: string, max = 60) => {
 
 const promptComponentsForImport = async (
   unregistered: Map<ComponentIDString, UnregisteredComponentEntry>,
+  initialIds: ComponentIDString[] = [],
 ): Promise<ComponentIDString[] | undefined> => {
   if (unregistered.size === 0) {
     console.log("インポート可能なコンポーネントはありません。");
@@ -1778,9 +1839,11 @@ const promptComponentsForImport = async (
       "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",
     options,
     required: true,
+    initialValues: initialIds,
+    cursorAt: initialIds[0],
   });
   if (prompts.isCancel(selection) || !Array.isArray(selection)) {
-    console.log("コンポーネントの選択をキャンセルしました。");
+    // console.log("コンポーネントの選択をキャンセルしました。");
     return undefined;
   }
   if (selection.length === 0) {
@@ -1795,7 +1858,6 @@ const runComponentsUpdate = async (
   preselected?: ComponentIDString[],
   options?: { pull?: boolean },
 ) => {
-
   const selectionFromArgs = preselected?.length
     ? preselected
     : parseComponentArgs(args);
@@ -1818,9 +1880,10 @@ const runComponentsUpdate = async (
       );
       if (unregisteredComponents.length) {
         console.warn(
-          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${unregisteredComponents.join(
-            ", ",
-          )
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
+            unregisteredComponents.join(
+              ", ",
+            )
           }`,
         );
       }
@@ -1838,9 +1901,10 @@ const runComponentsUpdate = async (
       }
       if (missing.length) {
         console.warn(
-          `The following components are not registered and were skipped: ${missing.join(
-            ", ",
-          )
+          `The following components are not registered and were skipped: ${
+            missing.join(
+              ", ",
+            )
           }`,
         );
       }
@@ -1942,9 +2006,10 @@ const runComponentsImport = async (
     const missing = selectionFromArgs.filter((id) => !unregistered.has(id));
     if (missing.length) {
       console.warn(
-        `The following components are not available for import: ${missing.join(
-          ", ",
-        )
+        `The following components are not available for import: ${
+          missing.join(
+            ", ",
+          )
         }`,
       );
     }
@@ -1989,27 +2054,47 @@ const runComponentsImport = async (
 };
 
 const runComponentsImportInteractive = async () => {
-  try {
-    const properties = PropertiesManager.fromYaml(
-      Deno.readTextFileSync("./crtb.properties.yml"),
-    );
-    const unregistered = await discoverUnregisteredComponents(properties);
-    if (unregistered.size === 0) {
-      console.log(
-        "crtb.properties.yml に未登録のコンポーネントは見つかりませんでした。",
+  let lastSelection: ComponentIDString[] = [];
+  while (true) {
+    try {
+      const properties = PropertiesManager.fromYaml(
+        Deno.readTextFileSync("./crtb.properties.yml"),
       );
-      return;
-    }
-    const selection = await promptComponentsForImport(unregistered);
-    if (!selection || selection.length === 0) {
-      console.log(
-        "コンポーネントが選択されていないため、インポートを中止しました。",
+      const unregistered = await discoverUnregisteredComponents(properties);
+      if (unregistered.size === 0) {
+        console.log(
+          "crtb.properties.yml に未登録のコンポーネントは見つかりませんでした。",
+        );
+        return;
+      }
+
+      // Filter lastSelection to only those that are still unregistered
+      lastSelection = lastSelection.filter((id) => unregistered.has(id));
+
+      const selection = await promptComponentsForImport(
+        unregistered,
+        lastSelection,
       );
-      return;
+      if (!selection || selection.length === 0) {
+        console.log(
+          "コンポーネントが選択されていないため、インポートを終了します。",
+        );
+        return;
+      }
+      await runComponentsImport([], selection);
+      lastSelection = selection; // Actually IMPORTED ones are now registered, so they won't appear next time.
+      // So restoring lastSelection for IMPORT might mean selecting *other* things?
+      // Wait, if I imported them, they are gone from the list.
+      // So restoring selection is moot for import, unless I failed to import?
+      // But the user requested "same state".
+      // For IMPORT, "Same state" might mean "Show the list again".
+      // But selected items are now imported.
+      // So I should start with empty selection or whatever remains?
+      // I'll leave lastSelection logic but it will likely be filtered out.
+    } catch (error) {
+      console.error("Failed to prepare import flow:", error);
+      break;
     }
-    await runComponentsImport([], selection);
-  } catch (error) {
-    console.error("Failed to prepare import flow:", error);
   }
 };
 
@@ -2041,31 +2126,36 @@ const cmd: Command = {
         await runComponentsUpdate(args);
       },
       interactiveHandler: async () => {
-        const selection = await promptComponentsForUpdate();
-        if (!selection || selection.length === 0) {
-          console.log(
-            "コンポーネントが選択されていないため、更新を中止しました。",
-          );
-          return;
+        let lastSelection: ComponentIDString[] = [];
+        while (true) {
+          const selection = await promptComponentsForUpdate(lastSelection);
+          if (!selection || selection.length === 0) {
+            return;
+          }
+          lastSelection = selection;
+          await runComponentsUpdate([], selection);
+          console.log(""); // Spacing
         }
-        await runComponentsUpdate([], selection);
       },
     },
     {
       name: "pull",
-      description: "Fetch and update component sources from remote (overwrites local changes)",
+      description:
+        "Fetch and update component sources from remote (overwrites local changes)",
       handler: async (args: string[]) => {
         await runComponentsUpdate(args, undefined, { pull: true });
       },
       interactiveHandler: async () => {
-        const selection = await promptComponentsForUpdate();
-        if (!selection || selection.length === 0) {
-          console.log(
-            "コンポーネントが選択されていないため、更新を中止しました。",
-          );
-          return;
+        let lastSelection: ComponentIDString[] = [];
+        while (true) {
+          const selection = await promptComponentsForUpdate(lastSelection);
+          if (!selection || selection.length === 0) {
+            return;
+          }
+          lastSelection = selection;
+          await runComponentsUpdate([], selection, { pull: true });
+          console.log(""); // Spacing
         }
-        await runComponentsUpdate([], selection, { pull: true });
       },
     },
   ],

@@ -276,6 +276,18 @@ export async function attachToContainerRefactored(containerName: string): Promis
             if (state.isCleanExit) break;
 
             // 2. Wait / Recovery
+            // Print disconnect message block
+            writeRaw("\n");
+            const SEP_COLOR = "\x1b[45m\x1b[97m"; // Magenta background (matches RESTARTING), White text
+            const RESET = "\x1b[0m";
+            const blockFunc = (msg: string) => `${SEP_COLOR} ${msg.padEnd(60)} ${RESET}\n`;
+
+            writeRaw(blockFunc("--- SESSION DISCONNECTED ---"));
+            writeRaw(blockFunc("The container is expected to restart soon."));
+            writeRaw(blockFunc("Waiting for reconnection..."));
+            writeRaw("\n");
+
+            // 2. Wait / Recovery
             // If we detected STOPPING log before disconnect, we are likely RESTARTING (or stopped).
             // If status is STOPPING, transition to RESTARTING.
             if (state.serverStatus === "STOPPING") {

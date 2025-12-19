@@ -1,9 +1,8 @@
 const VERSION = "0.0.1";
 
-import { intro, isCancel, log, outro, select } from "npm:@clack/prompts";
+import { isCancel, log, select } from "npm:@clack/prompts";
 
 import { Command, COMMANDS } from "./scripts/command.ts";
-
 
 const EXIT_OPTION = "__exit";
 const BACK_OPTION = "__back";
@@ -23,7 +22,7 @@ const renderBanner = () => {
 
   console.log(
     `                      [ Version: ${VERSION} | Author: Hare ]\n` +
-    "-------------------------------------------------------------------------------",
+      "-------------------------------------------------------------------------------",
   );
 };
 
@@ -113,7 +112,7 @@ const runInteractiveMenu = async () => {
         `"${chosenCommand.name}" の実行中にエラーが発生しました: ${error}`,
       );
     }
-    exitRequested = true;
+    // exitRequested = true;
   }
 
   // Clean up status bar on exit
