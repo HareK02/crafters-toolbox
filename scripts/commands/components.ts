@@ -128,7 +128,7 @@ type SpinnerState = {
   frame: number;
 };
 
-const createStatusManager = (totalCount: number) => {
+export const createStatusManager = (totalCount: number) => {
   const spinner = cliSpinners.dots;
   const states = new Map<string, SpinnerState>();
   const order: string[] = [];
@@ -252,7 +252,7 @@ const createStatusManager = (totalCount: number) => {
   };
 };
 
-const resolveSourceConfig = (
+export const resolveSourceConfig = (
   component: IComponent,
 ): SourceConfig | undefined => {
   if (component.source) return component.source;
@@ -445,7 +445,7 @@ const downloadToCache = async (
   }
 };
 
-const copyToDir = async (
+export const copyToDir = async (
   srcPath: string,
   destDir: string,
   componentName?: string,
@@ -518,7 +518,7 @@ const removeDeployedArtifacts = async (
 const componentBasePath = (component: IComponent) =>
   join("./components", `${component.kind}s`, component.name);
 
-const ensureLocalPresence = async (
+export const ensureLocalPresence = async (
   component: IComponent,
   options?: { pull?: boolean },
 ): Promise<{ path: string; cached: boolean } | undefined> => {
@@ -789,7 +789,7 @@ const streamPrefixedLines = async (
   }
 };
 
-const streamComponentLogs = async (
+export const streamComponentLogs = async (
   child: Deno.ChildProcess,
   component: IComponent,
 ) => {
@@ -838,7 +838,7 @@ const hasCommand = async (cmd: string) => {
   }
 };
 
-const runBuild = async (
+export const runBuild = async (
   component: IComponent,
   workdir: string,
   runnerImage: string,
@@ -972,7 +972,7 @@ const runBuild = async (
   }
 };
 
-const resolveArtifactBase = (
+export const resolveArtifactBase = (
   component: IComponent,
   buildOutputPath: string,
 ): { path: string; config: ArtifactConfig } => {
@@ -996,7 +996,7 @@ const resolveArtifactBase = (
   return { path: basePath, config: artifact };
 };
 
-const deployEntry = async (
+export const deployEntry = async (
   srcPath: string,
   destDir: string,
   componentName: string,
@@ -1011,7 +1011,7 @@ const deployEntry = async (
   }
 };
 
-const pickArtifactFile = async (
+export const pickArtifactFile = async (
   basePath: string,
   preferredExts: string[],
   pattern?: string,
