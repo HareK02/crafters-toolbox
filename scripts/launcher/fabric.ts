@@ -59,7 +59,7 @@ export async function resolveFabricLibraries(
     // We need to support the 'url' property on Library type (I missed adding it to type definition?)
     // Let's assume standard Maven resolution if no explicit artifact.
 
-    const libraryUrl = (lib as any).url || "https://repo1.maven.org/maven2/"; // Fallback to central
+    const libraryUrl = lib.url || "https://repo1.maven.org/maven2/"; // Fallback to central
     const fullUrl = lib.downloads?.artifact?.url || `${libraryUrl}${path}`;
 
     const localPath = join(libsDir, path);

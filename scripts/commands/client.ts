@@ -10,7 +10,7 @@ import {
   pickArtifactFile,
   resolveArtifactBase,
   runBuild,
-} from "./components.ts";
+} from "../components/index.ts";
 import { launchClient as launcherLaunch } from "../launcher/mod.ts";
 import { LauncherOptions } from "../launcher/types.ts";
 

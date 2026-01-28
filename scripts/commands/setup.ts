@@ -255,7 +255,9 @@ async function resolveDockerResultPath() {
             "Nix build artifact exists but points to missing /nix/store path (was it built in Docker?). Cannot load.",
           );
         }
-      } catch {}
+      } catch {
+        // File doesn't exist - will be handled by outer error
+      }
       throw new Error(
         "nix build did not produce a docker image (missing ./docker/result or ./docker/image.tar).",
       );

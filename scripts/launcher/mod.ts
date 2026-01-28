@@ -96,8 +96,11 @@ export async function launchClient(options: LauncherOptions) {
   ].join(":"); // Linux separator
 
   // 7. Construct Args
+  // Argument type: string or complex object with rules/value
+  type Argument = string | { value?: string | string[]; rules?: unknown[] };
+
   // Resolve arguments
-  const resolveArg = (arg: any): string[] => {
+  const resolveArg = (arg: Argument): string[] => {
     if (typeof arg === "string") return [replaceVars(arg)];
     // Rule check for args
     // If rules present and fail, return []

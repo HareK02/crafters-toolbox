@@ -17,6 +17,7 @@ export type Artifact = {
 
 export type Library = {
   name: string;
+  url?: string; // Base Maven repository URL for libraries without explicit artifact URLs
   downloads?: {
     artifact?: Artifact;
     classifiers?: Record<string, Artifact>;

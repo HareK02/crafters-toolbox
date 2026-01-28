@@ -1,8 +1,11 @@
-import { Datapack } from "./components/datapack.ts";
-import { Mod } from "./components/mod.ts";
-import { Plugin } from "./components/plugin.ts";
-import { Resourcepack } from "./components/resourcepack.ts";
-import { World } from "./components/world.ts";
+import {
+  Component,
+  createDatapack,
+  createMod,
+  createPlugin,
+  createResourcepack,
+  createWorld,
+} from "./components/index.ts";
 import {
   ArtifactConfig,
   BuildConfig,
@@ -11,6 +14,15 @@ import {
   SourceConfig,
 } from "./component.ts";
 import { parse, stringify } from "@std/yaml";
+
+/**
+ * レガシー形式のリファレンス定義
+ * 以前の crtb.properties.yml 形式との互換性のため
+ */
+type LegacyReference =
+  | { path: string }
+  | { url: string }
+  | { url: string; branch?: string; commit?: string };
 
 type VersionString =
   | `${number}.${number}.${number}`
@@ -35,11 +47,11 @@ export type ServerProperty = {
 export type Properties = {
   server: ServerProperty;
   components: {
-    world?: World;
-    datapacks?: Datapack[];
-    plugins?: Plugin[];
-    resourcepacks?: Resourcepack[];
-    mods?: Mod[];
+    world?: Component;
+    datapacks?: Component[];
+    plugins?: Component[];
+    resourcepacks?: Component[];
+    mods?: Component[];
   };
   exports: {
     [key: string]: {
@@ -79,7 +91,7 @@ export class PropertiesManager {
           {
             type: string;
             path?: string;
-            reference?: any;
+            reference?: LegacyReference;
             source?: SourceConfig;
             build?: BuildConfig;
             artifact?: ArtifactConfig;
@@ -94,29 +106,35 @@ export class PropertiesManager {
         exports: rawProperty.exports ?? {},
       };
 
-      const extractOptions = (
-        raw: {
-          path?: string;
-          reference?: any;
-          source?: SourceConfig;
-          build?: BuildConfig;
-          artifact?: ArtifactConfig;
-        },
-      ) => {
-        const source = raw.source ??
-          (raw.reference
-            ? "path" in (raw.reference as Record<string, unknown>)
-              ? {
-                type: "local",
-                path: (raw.reference as { path: string }).path,
-              }
-              : "url" in (raw.reference as Record<string, unknown>)
-              ? { type: "http", url: (raw.reference as { url: string }).url }
-              : undefined
-            : undefined);
+      /**
+       * レガシー参照形式からSourceConfigに変換
+       */
+      const convertLegacyReference = (
+        ref: LegacyReference | undefined,
+      ): SourceConfig | undefined => {
+        if (!ref) return undefined;
+        if ("path" in ref) {
+          return { type: "local", path: ref.path };
+        }
+        if ("url" in ref) {
+          return { type: "http", url: ref.url };
+        }
+        return undefined;
+      };
+
+      /**
+       * 生のコンポーネントデータからオプションを抽出
+       */
+      const extractOptions = (raw: {
+        path?: string;
+        reference?: LegacyReference;
+        source?: SourceConfig;
+        build?: BuildConfig;
+        artifact?: ArtifactConfig;
+      }) => {
+        const source = raw.source ?? convertLegacyReference(raw.reference);
         return {
           path: raw.path,
-          reference: raw.reference,
           source,
           build: raw.build,
           artifact: raw.artifact,
@@ -135,56 +153,25 @@ export class PropertiesManager {
 
           switch (componentType) {
             case ComponentIDType.WORLD:
-              property.components.world = new World(opts.reference, {
-                path: opts.path,
-                source: opts.source,
-                build: opts.build,
-                artifact: opts.artifact,
-              });
+              property.components.world = createWorld(opts);
               break;
             case ComponentIDType.DATAPACKS:
               property.components.datapacks ??= [];
-              property.components.datapacks.push(
-                new Datapack(name, opts.reference, {
-                  path: opts.path,
-                  source: opts.source,
-                  build: opts.build,
-                  artifact: opts.artifact,
-                }),
-              );
+              property.components.datapacks.push(createDatapack(name, opts));
               break;
             case ComponentIDType.PLUGINS:
               property.components.plugins ??= [];
-              property.components.plugins.push(
-                new Plugin(name, opts.reference, {
-                  path: opts.path,
-                  source: opts.source,
-                  build: opts.build,
-                  artifact: opts.artifact,
-                }),
-              );
+              property.components.plugins.push(createPlugin(name, opts));
               break;
             case ComponentIDType.RESOURCEPACKS:
               property.components.resourcepacks ??= [];
               property.components.resourcepacks.push(
-                new Resourcepack(name, opts.reference, {
-                  path: opts.path,
-                  source: opts.source,
-                  build: opts.build,
-                  artifact: opts.artifact,
-                }),
+                createResourcepack(name, opts),
               );
               break;
             case ComponentIDType.MODS:
               property.components.mods ??= [];
-              property.components.mods.push(
-                new Mod(name, opts.reference, {
-                  path: opts.path,
-                  source: opts.source,
-                  build: opts.build,
-                  artifact: opts.artifact,
-                }),
-              );
+              property.components.mods.push(createMod(name, opts));
               break;
             default:
               console.warn(

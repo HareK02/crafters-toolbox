@@ -1,5 +1,3 @@
-import { IReference } from "./reference.ts";
-
 const COMPONENT_ID_TYPES = {
   WORLD: "world",
   DATAPACKS: "datapack",
@@ -88,7 +86,6 @@ export interface IComponent {
   kind: ComponentIDType;
   name: string;
   path?: string;
-  reference?: IReference;
   source?: SourceConfig;
   build?: BuildConfig;
   artifact?: ArtifactConfig;

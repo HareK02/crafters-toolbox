@@ -115,9 +115,12 @@ async function inspectContainer(
     } finally {
       try {
         conn.close();
-      } catch {}
+      } catch {
+        // Connection already closed - ignore
+      }
     }
   } catch {
+    // Exec failed - container may not be running
     return null;
   }
 }
@@ -149,6 +152,7 @@ async function runInputLoop(
         await processInput(str, chunk, state, conn);
       }
     } catch {
+      // Input stream closed or connection error
       break;
     }
   }
@@ -298,7 +302,9 @@ export async function attachToContainerRefactored(
                 if (n === null) break;
                 writeLog(buf.subarray(0, n), state);
               }
-            } catch {}
+            } catch {
+              // Connection closed or read error - normal during disconnect
+            }
             resolve();
           })();
         });
@@ -308,7 +314,9 @@ export async function attachToContainerRefactored(
         detachResolver = null;
         try {
           conn.close();
-        } catch {}
+        } catch {
+          // Connection already closed - ignore
+        }
       } catch (e) {
         // Connection failed
       }
@@ -350,7 +358,9 @@ export async function attachToContainerRefactored(
   } finally {
     try {
       Deno.stdin.setRaw(false);
-    } catch {}
+    } catch {
+      // stdin may not be a TTY - ignore
+    }
   }
 }
 
@@ -388,7 +398,9 @@ function drawFooter(state: AttachState) {
   try {
     const size = Deno.consoleSize();
     width = size.columns;
-  } catch {}
+  } catch {
+    // Not a TTY - use default width
+  }
 
   // Top: Input Line
   writeRaw(`\r${ANSI.clearLine}> ${state.currentInput}\n`);
