@@ -1,4 +1,4 @@
-import { dirname, join } from "jsr:@std/path";
+import { dirname, join } from "@std/path";
 import { downloadFile, extractZip, fetchJson, HttpClient } from "./utils.ts";
 import {
   AssetIndex,

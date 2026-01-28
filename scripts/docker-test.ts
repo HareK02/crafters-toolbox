@@ -4,7 +4,8 @@ export async function dockerTest() {
   });
   const dockerCheckResult = dockerCheck.spawn();
   const res = await dockerCheckResult.status;
-  if (!res.success)
+  if (!res.success) {
     console.error("Docker is not installed. Please install Docker.");
+  }
   return res.success;
 }

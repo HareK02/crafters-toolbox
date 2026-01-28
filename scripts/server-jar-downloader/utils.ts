@@ -1,9 +1,4 @@
-import {
-  dirname,
-  isAbsolute,
-  join,
-  resolve as resolvePath,
-} from "https://deno.land/std@0.224.0/path/mod.ts";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "@std/path";
 import {
   DownloadResolution,
   DownloadServerJarOptions,

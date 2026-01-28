@@ -1,278 +1,293 @@
-
 import { attachToContainer } from "./terminal/docker-attach.ts";
-import { basename } from "jsr:@std/path";
+import { basename } from "@std/path";
 import { getLocalIdentity, getUserSpec } from "./docker-env.ts";
 
 /**
  * Get the project name from the current working directory
  */
 export function getProjectName(): string {
-    const cwd = Deno.cwd();
-    return basename(cwd);
+  const cwd = Deno.cwd();
+  return basename(cwd);
 }
 
 /**
  * Get container name for a service
  */
 export function getContainerName(service: string): string {
-    const project = getProjectName();
-    const serviceSuffix = service.replace("-server", "");
-    return `${project}-${serviceSuffix}`;
+  const project = getProjectName();
+  const serviceSuffix = service.replace("-server", "");
+  return `${project}-${serviceSuffix}`;
 }
 
 /**
  * Get environment variables for docker run as array format
  */
 export function getDockerRunEnv(): string[] {
-    const identity = getLocalIdentity();
+  const identity = getLocalIdentity();
 
-    return [
-        `-e`, `LOCAL_UID=${identity.uid}`,
-        `-e`, `LOCAL_GID=${identity.gid}`,
-        `-e`, `LOCAL_USER=${identity.username}`,
-    ];
+  return [
+    `-e`,
+    `LOCAL_UID=${identity.uid}`,
+    `-e`,
+    `LOCAL_GID=${identity.gid}`,
+    `-e`,
+    `LOCAL_USER=${identity.username}`,
+  ];
 }
 
 /**
  * Check if a container exists and is running
  */
 export async function getContainerStatus(containerName: string): Promise<{
-    exists: boolean;
-    running: boolean;
-    state?: string;
+  exists: boolean;
+  running: boolean;
+  state?: string;
 }> {
-    try {
-        const command = new Deno.Command("docker", {
-            args: ["inspect", "--format", "{{json .State}}", containerName],
-            stdout: "piped",
-            stderr: "piped",
-        });
+  try {
+    const command = new Deno.Command("docker", {
+      args: ["inspect", "--format", "{{json .State}}", containerName],
+      stdout: "piped",
+      stderr: "piped",
+    });
 
-        const { success, stdout } = await command.output();
-        if (!success) {
-            return { exists: false, running: false };
-        }
-
-        const text = new TextDecoder().decode(stdout).trim();
-        const state = JSON.parse(text) as { Running: boolean; Status: string };
-
-        return {
-            exists: true,
-            running: state.Running,
-            state: state.Status,
-        };
-    } catch {
-        return { exists: false, running: false };
+    const { success, stdout } = await command.output();
+    if (!success) {
+      return { exists: false, running: false };
     }
+
+    const text = new TextDecoder().decode(stdout).trim();
+    const state = JSON.parse(text) as { Running: boolean; Status: string };
+
+    return {
+      exists: true,
+      running: state.Running,
+      state: state.Status,
+    };
+  } catch {
+    return { exists: false, running: false };
+  }
 }
 
 /**
  * Stop and remove a container
  */
 export async function stopContainer(containerName: string): Promise<boolean> {
-    const status = await getContainerStatus(containerName);
+  const status = await getContainerStatus(containerName);
 
-    if (!status.exists) {
-        return true; // Already stopped/removed
-    }
+  if (!status.exists) {
+    return true; // Already stopped/removed
+  }
 
-    if (status.running) {
-        // Stop the container
-        const stopCmd = new Deno.Command("docker", {
-            args: ["stop", containerName],
-            stdout: "inherit",
-            stderr: "inherit",
-        });
-
-        const { success } = await stopCmd.output();
-        if (!success) {
-            return false;
-        }
-    }
-
-    // Remove the container
-    const rmCmd = new Deno.Command("docker", {
-        args: ["rm", containerName],
-        stdout: "inherit",
-        stderr: "inherit",
+  if (status.running) {
+    // Stop the container
+    const stopCmd = new Deno.Command("docker", {
+      args: ["stop", containerName],
+      stdout: "inherit",
+      stderr: "inherit",
     });
 
-    const { success } = await rmCmd.output();
-    return success;
+    const { success } = await stopCmd.output();
+    if (!success) {
+      return false;
+    }
+  }
+
+  // Remove the container
+  const rmCmd = new Deno.Command("docker", {
+    args: ["rm", containerName],
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const { success } = await rmCmd.output();
+  return success;
 }
 
 interface RunContainerOptions {
-    image?: string;
-    entrypoint?: string[];
-    ports?: string[];
-    volumes?: string[];
-    env?: string[];
-    user?: string;
-    restart?: string;
-    detach?: boolean;
-    network?: string;
+  image?: string;
+  entrypoint?: string[];
+  ports?: string[];
+  volumes?: string[];
+  env?: string[];
+  user?: string;
+  restart?: string;
+  detach?: boolean;
+  network?: string;
 }
 
 /**
  * Run a container with the specified configuration
  */
 export async function runContainer(
-    service: string,
-    options: RunContainerOptions = {},
+  service: string,
+  options: RunContainerOptions = {},
 ): Promise<boolean> {
-    const containerName = getContainerName(service);
+  const containerName = getContainerName(service);
 
-    // Stop existing container if running
-    await stopContainer(containerName);
+  // Stop existing container if running
+  await stopContainer(containerName);
 
-    const args = ["run"];
+  const args = ["run"];
 
-    // Container name
-    args.push("--name", containerName);
+  // Container name
+  args.push("--name", containerName);
 
-    // TTY and stdin
-    args.push("-t", "-i");
+  // TTY and stdin
+  args.push("-t", "-i");
 
-    // Detach mode
-    if (options.detach !== false) {
-        args.push("-d");
+  // Detach mode
+  if (options.detach !== false) {
+    args.push("-d");
+  }
+
+  // Restart policy
+  if (options.restart) {
+    args.push("--restart", options.restart);
+  }
+
+  // User
+  if (options.user) {
+    args.push("--user", options.user);
+  } else {
+    const identity = getLocalIdentity();
+    const userSpec = getUserSpec(
+      (identity.uid ?? 0) as number,
+      (identity.gid ?? 0) as number,
+    );
+    args.push("--user", userSpec);
+  }
+
+  // Environment variables
+  const envVars = [...getDockerRunEnv(), ...(options.env || [])];
+  args.push(...envVars);
+
+  // Add host.docker.internal
+  args.push("--add-host", "host.docker.internal:host-gateway");
+
+  // Network
+  if (options.network) {
+    args.push("--network", options.network);
+  }
+
+  // Volumes
+  if (options.volumes) {
+    for (const volume of options.volumes) {
+      args.push("-v", volume);
     }
+  }
 
-    // Restart policy
-    if (options.restart) {
-        args.push("--restart", options.restart);
+  // Ports
+  if (options.ports) {
+    for (const port of options.ports) {
+      args.push("-p", port);
     }
+  }
 
-    // User
-    if (options.user) {
-        args.push("--user", options.user);
-    } else {
-        const identity = getLocalIdentity();
-        const userSpec = getUserSpec((identity.uid ?? 0) as number, (identity.gid ?? 0) as number);
-        args.push("--user", userSpec);
-    }
+  // Entrypoint
+  if (options.entrypoint) {
+    args.push("--entrypoint", options.entrypoint[0]);
+  }
 
-    // Environment variables
-    const envVars = [...getDockerRunEnv(), ...(options.env || [])];
-    args.push(...envVars);
+  // Image
+  const image = options.image || "crafters-toolbox:latest";
+  args.push(image);
 
-    // Add host.docker.internal
-    args.push("--add-host", "host.docker.internal:host-gateway");
+  // Additional entrypoint args
+  if (options.entrypoint && options.entrypoint.length > 1) {
+    args.push(...options.entrypoint.slice(1));
+  }
 
-    // Network
-    if (options.network) {
-        args.push("--network", options.network);
-    }
+  const command = new Deno.Command("docker", {
+    args,
+    stdout: "inherit",
+    stderr: "inherit",
+    stdin: "inherit",
+  });
 
-    // Volumes
-    if (options.volumes) {
-        for (const volume of options.volumes) {
-            args.push("-v", volume);
-        }
-    }
-
-    // Ports
-    if (options.ports) {
-        for (const port of options.ports) {
-            args.push("-p", port);
-        }
-    }
-
-    // Entrypoint
-    if (options.entrypoint) {
-        args.push("--entrypoint", options.entrypoint[0]);
-    }
-
-    // Image
-    const image = options.image || "crafters-toolbox:latest";
-    args.push(image);
-
-    // Additional entrypoint args
-    if (options.entrypoint && options.entrypoint.length > 1) {
-        args.push(...options.entrypoint.slice(1));
-    }
-
-    const command = new Deno.Command("docker", {
-        args,
-        stdout: "inherit",
-        stderr: "inherit",
-        stdin: "inherit",
-    });
-
-    const { success } = await command.output();
-    return success;
+  const { success } = await command.output();
+  return success;
 }
 
 /**
  * Attach to a running container's console with status bar and command input
  */
 export async function attachContainer(containerName: string): Promise<boolean> {
-    const status = await getContainerStatus(containerName);
+  const status = await getContainerStatus(containerName);
 
-    if (!status.exists || !status.running) {
-        console.error(`Container ${containerName} is not running`);
-        return false;
-    }
+  if (!status.exists || !status.running) {
+    console.error(`Container ${containerName} is not running`);
+    return false;
+  }
 
-    await attachToContainer(containerName);
-    return true;
+  await attachToContainer(containerName);
+  return true;
 }
 
 /**
  * Configuration for game server container
  */
 export function getGameServerConfig(): RunContainerOptions {
-    return {
-        entrypoint: ["start-game"],
-        restart: "unless-stopped",
-        network: "bridge",
-        env: [
-            `-e`, `MEM_MAX=${Deno.env.get("MEM_MAX") || "4G"}`,
-        ],
-        volumes: [
-            `${Deno.cwd()}/server:/home/container/server`,
-        ],
-        ports: [
-            "25565:25565",
-        ],
-    };
+  return {
+    entrypoint: ["start-game"],
+    restart: "unless-stopped",
+    network: "bridge",
+    env: [
+      `-e`,
+      `MEM_MAX=${Deno.env.get("MEM_MAX") || "4G"}`,
+    ],
+    volumes: [
+      `${Deno.cwd()}/server:/home/container/server`,
+    ],
+    ports: [
+      "25565:25565",
+    ],
+  };
 }
 
 /**
  * Configuration for SSH server container
  */
 export function getSSHServerConfig(): RunContainerOptions {
-    return {
-        entrypoint: ["start-ssh"],
-        user: "0:0", // SSH server needs root
-        env: [
-            `-e`, `SSH_PORT=${Deno.env.get("SSH_PORT") || "2222"}`,
-            `-e`, `SSH_ENABLE_PASSWORD_AUTH=${Deno.env.get("SSH_ENABLE_PASSWORD_AUTH") || "false"}`,
-            `-e`, `SSH_ENABLE_KEY_AUTH=${Deno.env.get("SSH_ENABLE_KEY_AUTH") || "true"}`,
-            `-e`, `SSH_PASSWORD=${Deno.env.get("SSH_PASSWORD") || ""}`,
-        ],
-        volumes: [
-            `${Deno.cwd()}/components:/home/container/components`,
-            `${Deno.cwd()}/server:/home/container/server`,
-            `${Deno.cwd()}/.ssh:/home/container/.ssh`,
-        ],
-        ports: [
-            "2222:2222",
-        ],
-    };
+  return {
+    entrypoint: ["start-ssh"],
+    user: "0:0", // SSH server needs root
+    env: [
+      `-e`,
+      `SSH_PORT=${Deno.env.get("SSH_PORT") || "2222"}`,
+      `-e`,
+      `SSH_ENABLE_PASSWORD_AUTH=${
+        Deno.env.get("SSH_ENABLE_PASSWORD_AUTH") || "false"
+      }`,
+      `-e`,
+      `SSH_ENABLE_KEY_AUTH=${Deno.env.get("SSH_ENABLE_KEY_AUTH") || "true"}`,
+      `-e`,
+      `SSH_PASSWORD=${Deno.env.get("SSH_PASSWORD") || ""}`,
+    ],
+    volumes: [
+      `${Deno.cwd()}/components:/home/container/components`,
+      `${Deno.cwd()}/server:/home/container/server`,
+      `${Deno.cwd()}/.ssh:/home/container/.ssh`,
+    ],
+    ports: [
+      "2222:2222",
+    ],
+  };
 }
 
 /**
  * Configuration for monitor server container
  */
 export function getMonitorServerConfig(): RunContainerOptions {
-    return {
-        entrypoint: ["start-monitor"],
-        env: [
-            `-e`, `MONITOR_SUMMARY_INTERVAL=${Deno.env.get("MONITOR_SUMMARY_INTERVAL") || "300"}`,
-        ],
-        volumes: [
-            `${Deno.cwd()}/server:/home/container/server`,
-        ],
-    };
+  return {
+    entrypoint: ["start-monitor"],
+    env: [
+      `-e`,
+      `MONITOR_SUMMARY_INTERVAL=${
+        Deno.env.get("MONITOR_SUMMARY_INTERVAL") || "300"
+      }`,
+    ],
+    volumes: [
+      `${Deno.cwd()}/server:/home/container/server`,
+    ],
+  };
 }

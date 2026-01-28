@@ -8,13 +8,16 @@ const cmd: Command = {
       console.log(
         COMMANDS.map(
           (cmd) =>
-            `- ${cmd.name}: ${cmd.description} ${cmd.subcommands
-              ? `\n    subcommands ${cmd.subcommands
-                .map((sub) => sub.name)
-                .join(", \n    ")}`
-              : ""
-            }`
-        ).join("\n\n")
+            `- ${cmd.name}: ${cmd.description} ${
+              cmd.subcommands
+                ? `\n    subcommands ${
+                  cmd.subcommands
+                    .map((sub) => sub.name)
+                    .join(", \n    ")
+                }`
+                : ""
+            }`,
+        ).join("\n\n"),
       );
     } else {
       const commandName = args[0];

@@ -1,10 +1,5 @@
-import {
-  dirname,
-  isAbsolute,
-  join,
-  resolve as resolvePath,
-} from "jsr:@std/path";
-import { ensureDir } from "jsr:@std/fs";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "@std/path";
+import { ensureDir } from "@std/fs";
 
 export const DEFAULT_USER_AGENT =
   "Crafter's Toolbox Launcher (+https://github.com/crafters-toolbox)";

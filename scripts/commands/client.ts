@@ -1,4 +1,4 @@
-import { join } from "jsr:@std/path";
+import { join } from "@std/path";
 import { Command } from "../command.ts";
 import { ComponentIDType, IComponent } from "../component.ts";
 import { getJavaImage, loadConfig } from "../config.ts";

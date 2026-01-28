@@ -1,6 +1,6 @@
 const VERSION = "0.0.1";
 
-import { isCancel, log, select } from "npm:@clack/prompts";
+import { isCancel, log, select } from "@clack/prompts";
 
 import { Command, COMMANDS } from "./scripts/command.ts";
 

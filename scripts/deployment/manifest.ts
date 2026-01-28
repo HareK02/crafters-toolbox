@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, relative } from "jsr:@std/path";
+import { dirname, isAbsolute, join, relative } from "@std/path";
 
 const MANIFEST_VERSION = 1;
 

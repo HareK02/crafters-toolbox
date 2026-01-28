@@ -1,5 +1,5 @@
-import { dirname, join } from "jsr:@std/path";
-import { ensureDir } from "jsr:@std/fs";
+import { dirname, join } from "@std/path";
+import { ensureDir } from "@std/fs";
 import { createHttpClient, downloadFile } from "./utils.ts";
 import { LauncherOptions } from "./types.ts";
 import {

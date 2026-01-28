@@ -10,7 +10,7 @@ import {
   IComponent,
   SourceConfig,
 } from "./component.ts";
-import { parse, stringify } from "jsr:@std/yaml";
+import { parse, stringify } from "@std/yaml";
 
 type VersionString =
   | `${number}.${number}.${number}`
@@ -111,8 +111,8 @@ export class PropertiesManager {
                 path: (raw.reference as { path: string }).path,
               }
               : "url" in (raw.reference as Record<string, unknown>)
-                ? { type: "http", url: (raw.reference as { url: string }).url }
-                : undefined
+              ? { type: "http", url: (raw.reference as { url: string }).url }
+              : undefined
             : undefined);
         return {
           path: raw.path,
@@ -123,8 +123,12 @@ export class PropertiesManager {
         };
       };
 
-      if (rawProperty.components && typeof rawProperty.components === "object") {
-        for (const [name, rawComponent] of Object.entries(rawProperty.components)) {
+      if (
+        rawProperty.components && typeof rawProperty.components === "object"
+      ) {
+        for (
+          const [name, rawComponent] of Object.entries(rawProperty.components)
+        ) {
           if (!rawComponent || typeof rawComponent !== "object") continue;
           const opts = extractOptions(rawComponent);
           const componentType = rawComponent.type as string;
@@ -183,7 +187,9 @@ export class PropertiesManager {
               );
               break;
             default:
-              console.warn(`Unknown component type: ${componentType} for ${name}`);
+              console.warn(
+                `Unknown component type: ${componentType} for ${name}`,
+              );
           }
         }
       }
@@ -200,7 +206,9 @@ export class PropertiesManager {
       components: {} as Record<string, unknown>,
     };
 
-    if (this.properties.exports && Object.keys(this.properties.exports).length > 0) {
+    if (
+      this.properties.exports && Object.keys(this.properties.exports).length > 0
+    ) {
       data.exports = this.properties.exports;
     }
 
@@ -227,7 +235,9 @@ export class PropertiesManager {
     };
 
     if (this.properties.components.world !== undefined) {
-      components["world"] = serializeComponent(this.properties.components.world);
+      components["world"] = serializeComponent(
+        this.properties.components.world,
+      );
     }
 
     const list: IComponent[] = [];

@@ -1,4 +1,4 @@
-import { join } from "jsr:@std/path";
+import { join } from "@std/path";
 import { downloadFile, fetchJson, HttpClient } from "./utils.ts";
 import { FabricLoaderVersion, Library } from "./types.ts";
 

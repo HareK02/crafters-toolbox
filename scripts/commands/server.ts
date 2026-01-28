@@ -1,13 +1,12 @@
-
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import {
+  attachContainer,
+  getContainerName,
+  getContainerStatus,
+  getGameServerConfig,
   runContainer,
   stopContainer,
-  getContainerStatus,
-  getContainerName,
-  getGameServerConfig,
-  attachContainer,
 } from "../docker-runner.ts";
 
 const GAME_SERVICE = "game-server";
@@ -24,7 +23,9 @@ async function showStatusMessage() {
   }
 
   console.log(
-    `game-server: ${status.running ? "running" : "stopped"} (${status.state ?? "unknown"})`,
+    `game-server: ${status.running ? "running" : "stopped"} (${
+      status.state ?? "unknown"
+    })`,
   );
 }
 

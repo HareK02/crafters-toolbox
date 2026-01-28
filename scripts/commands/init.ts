@@ -1,5 +1,5 @@
-import { dirname, fromFileUrl, join, resolve } from "jsr:@std/path";
-import { ensureDir } from "jsr:@std/fs";
+import { dirname, fromFileUrl, join, resolve } from "@std/path";
+import { ensureDir } from "@std/fs";
 import { Command } from "../command.ts";
 
 // Resolve paths relative to the current module to ensure they work in compiled binaries

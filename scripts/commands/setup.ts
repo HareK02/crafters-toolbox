@@ -1,4 +1,4 @@
-import { join } from "jsr:@std/path";
+import { join } from "@std/path";
 
 import { Command } from "../command.ts";
 import { PropertiesManager, ServerProperty, ServerType } from "../property.ts";
@@ -40,7 +40,8 @@ const cmd: Command = {
 
         await Deno.mkdir(SERVER_DIR, { recursive: true });
         console.log(
-          `[setup] Downloading ${flavor} ${server.version}${build ? ` (build ${build})` : ""
+          `[setup] Downloading ${flavor} ${server.version}${
+            build ? ` (build ${build})` : ""
           }...`,
         );
         const destination = await downloadServerJar({
@@ -53,7 +54,7 @@ const cmd: Command = {
       }
 
       if (doAll || doDocker) {
-        // When explicitly asked with --docker, force build. 
+        // When explicitly asked with --docker, force build.
         // When running all (default), check existence first (forceBuild=false).
         const forceBuild = doDocker;
         await ensureDockerImage(forceBuild);
@@ -82,7 +83,8 @@ async function loadServerProperty(): Promise<ServerProperty> {
       );
     }
     throw new Error(
-      `Failed to load server properties: ${error instanceof Error ? error.message : error
+      `Failed to load server properties: ${
+        error instanceof Error ? error.message : error
       }`,
     );
   }
@@ -109,7 +111,9 @@ async function ensureDockerImage(forceBuild: boolean) {
     console.log(`[setup] Checking for Docker image ${IMAGE_REFERENCE}...`);
     const exists = await checkImageExists(IMAGE_REFERENCE);
     if (exists) {
-      console.log(`[setup] Image ${IMAGE_REFERENCE} already exists. Skipping build.`);
+      console.log(
+        `[setup] Image ${IMAGE_REFERENCE} already exists. Skipping build.`,
+      );
       return;
     }
     console.log(`[setup] Image ${IMAGE_REFERENCE} not found. Building...`);
@@ -187,13 +191,13 @@ async function isNixAvailable(): Promise<boolean> {
 async function buildViaDocker() {
   const cwd = await Deno.realPath(DOCKER_FLAKE_DIR);
   // We run a nixos/nix container, mount the docker directory, and run nix build.
-  // Note: We need 'nix build .#dockerImage'. 
+  // Note: We need 'nix build .#dockerImage'.
   // IMPORTANT: The 'result' symlink created inside container might be invalid on host if paths differ,
-  // but the 'result' target (the store path) won't exist on host. 
-  // However, 'docker load' usually takes a tarball. 
+  // but the 'result' target (the store path) won't exist on host.
+  // However, 'docker load' usually takes a tarball.
   // 'nix build' produces a symlink to /nix/store/.../image.tar.gz.
   // If we run this in docker, the /nix/store path is only in the container.
-  // So we must output the file to the mounted volume explicitly? 
+  // So we must output the file to the mounted volume explicitly?
   // Or simpler: We just use `nix build` which makes `result` link.
   // But host cannot resolve `result` link pointing to container's /nix/store.
 
@@ -207,11 +211,14 @@ async function buildViaDocker() {
   await runCommandOrThrow("docker", [
     "run",
     "--rm",
-    "-v", `${cwd}:/app`,
-    "-w", "/app",
+    "-v",
+    `${cwd}:/app`,
+    "-w",
+    "/app",
     "nixos/nix",
-    "sh", "-c",
-    `nix --extra-experimental-features "nix-command flakes" build ${DOCKER_BUILD_TARGET} && cp -L result image.tar`
+    "sh",
+    "-c",
+    `nix --extra-experimental-features "nix-command flakes" build ${DOCKER_BUILD_TARGET} && cp -L result image.tar`,
   ], {
     stdin: "inherit",
     stdout: "inherit",
@@ -244,9 +251,11 @@ async function resolveDockerResultPath() {
         const lstat = await Deno.lstat(relative);
         if (lstat.isSymlink) {
           // It is a symlink, but likely points to missing /nix/store path.
-          throw new Error("Nix build artifact exists but points to missing /nix/store path (was it built in Docker?). Cannot load.");
+          throw new Error(
+            "Nix build artifact exists but points to missing /nix/store path (was it built in Docker?). Cannot load.",
+          );
         }
-      } catch { }
+      } catch {}
       throw new Error(
         "nix build did not produce a docker image (missing ./docker/result or ./docker/image.tar).",
       );
@@ -268,8 +277,8 @@ async function runCommandOrThrow(
       const detail = status.code !== undefined
         ? `exit code ${status.code}`
         : status.signal !== undefined
-          ? `signal ${status.signal}`
-          : "unknown failure";
+        ? `signal ${status.signal}`
+        : "unknown failure";
       throw new Error(
         `Command "${command} ${args.join(" ")}" failed (${detail}).`,
       );

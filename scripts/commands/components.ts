@@ -1,7 +1,7 @@
-import { copy } from "jsr:@std/fs";
-import { basename, isAbsolute, join } from "jsr:@std/path";
-import logUpdate from "npm:log-update";
-import cliSpinners from "npm:cli-spinners";
+import { copy } from "@std/fs";
+import { basename, isAbsolute, join } from "@std/path";
+import logUpdate from "log-update";
+import cliSpinners from "cli-spinners";
 
 import { Command } from "../command.ts";
 import { Datapack } from "../components/datapack.ts";
@@ -528,7 +528,9 @@ export const ensureLocalPresence = async (
 ): Promise<{ path: string; cached: boolean } | undefined> => {
   if (component.kind === ComponentIDType.WORLD) return undefined;
   const dest = componentBasePath(component);
-  const baseDir = dest.includes("/") ? dest.substring(0, dest.lastIndexOf("/")) : "./components";
+  const baseDir = dest.includes("/")
+    ? dest.substring(0, dest.lastIndexOf("/"))
+    : "./components";
 
   // If not forceful pull, prefer existing local directory
   if (!options?.pull) {
@@ -1624,7 +1626,9 @@ const renderComponentInventory = async () => {
       ? ` [${COMPONENT_TYPE_LABELS[entry.component.kind]}]`
       : "";
     const suffix = entry.registered ? "" : "  (unregistered)";
-    console.log(`  - ${entry.name.padEnd(nameWidth)}${typeLabel}  ${summary}${suffix}`);
+    console.log(
+      `  - ${entry.name.padEnd(nameWidth)}${typeLabel}  ${summary}${suffix}`,
+    );
   }
 };
 
@@ -1671,7 +1675,6 @@ const promptComponentsForUpdate = async (
     return undefined;
   }
 };
-
 
 const truncateHint = (text: string, max = 60) => {
   if (text.length <= max) return text;
@@ -1740,7 +1743,9 @@ const runComponentsUpdate = async (
       );
       if (unregisteredNames.length) {
         console.warn(
-          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${unregisteredNames.join(", ")}`,
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
+            unregisteredNames.join(", ")
+          }`,
         );
       }
     } catch (error) {
@@ -1757,7 +1762,9 @@ const runComponentsUpdate = async (
       }
       if (missing.length) {
         console.warn(
-          `The following components are not registered and were skipped: ${missing.join(", ")}`,
+          `The following components are not registered and were skipped: ${
+            missing.join(", ")
+          }`,
         );
       }
       if (!matched.length) {
@@ -1784,8 +1791,12 @@ const detectComponentType = async (
       // dataフォルダがあればdatapack、assetsフォルダがあればresourcepack
       const dataPath = join(path, "data");
       const assetsPath = join(path, "assets");
-      const hasData = await Deno.stat(dataPath).then(() => true).catch(() => false);
-      const hasAssets = await Deno.stat(assetsPath).then(() => true).catch(() => false);
+      const hasData = await Deno.stat(dataPath).then(() => true).catch(() =>
+        false
+      );
+      const hasAssets = await Deno.stat(assetsPath).then(() => true).catch(() =>
+        false
+      );
       if (hasData) return ComponentIDType.DATAPACKS;
       if (hasAssets) return ComponentIDType.RESOURCEPACKS;
       return ComponentIDType.DATAPACKS; // デフォルトはdatapack
@@ -1796,31 +1807,48 @@ const detectComponentType = async (
     // build.gradleまたはbuild.gradle.ktsがある場合はpluginまたはmod
     const buildGradlePath = join(path, "build.gradle");
     const buildGradleKtsPath = join(path, "build.gradle.kts");
-    const hasBuildGradle = await Deno.stat(buildGradlePath).then(() => true).catch(() => false);
-    const hasBuildGradleKts = await Deno.stat(buildGradleKtsPath).then(() => true).catch(() => false);
+    const hasBuildGradle = await Deno.stat(buildGradlePath).then(() => true)
+      .catch(() => false);
+    const hasBuildGradleKts = await Deno.stat(buildGradleKtsPath).then(() =>
+      true
+    ).catch(() => false);
     if (hasBuildGradle || hasBuildGradleKts) {
       // fabric.mod.jsonがあればmod
-      const fabricModJsonPath = join(path, "src/main/resources/fabric.mod.json");
-      const hasFabricMod = await Deno.stat(fabricModJsonPath).then(() => true).catch(() => false);
+      const fabricModJsonPath = join(
+        path,
+        "src/main/resources/fabric.mod.json",
+      );
+      const hasFabricMod = await Deno.stat(fabricModJsonPath).then(() => true)
+        .catch(() => false);
       if (hasFabricMod) return ComponentIDType.MODS;
       // mods.tomlがあればmod (Forge/NeoForge)
       const modsTomlPath = join(path, "src/main/resources/META-INF/mods.toml");
-      const hasModsToml = await Deno.stat(modsTomlPath).then(() => true).catch(() => false);
+      const hasModsToml = await Deno.stat(modsTomlPath).then(() => true).catch(
+        () => false,
+      );
       if (hasModsToml) return ComponentIDType.MODS;
       // plugin.ymlがあればplugin
       const pluginYmlPath = join(path, "src/main/resources/plugin.yml");
-      const hasPluginYml = await Deno.stat(pluginYmlPath).then(() => true).catch(() => false);
+      const hasPluginYml = await Deno.stat(pluginYmlPath).then(() => true)
+        .catch(() => false);
       if (hasPluginYml) return ComponentIDType.PLUGINS;
       // paper-plugin.ymlがあればplugin
-      const paperPluginYmlPath = join(path, "src/main/resources/paper-plugin.yml");
-      const hasPaperPluginYml = await Deno.stat(paperPluginYmlPath).then(() => true).catch(() => false);
+      const paperPluginYmlPath = join(
+        path,
+        "src/main/resources/paper-plugin.yml",
+      );
+      const hasPaperPluginYml = await Deno.stat(paperPluginYmlPath).then(() =>
+        true
+      ).catch(() => false);
       if (hasPaperPluginYml) return ComponentIDType.PLUGINS;
       return ComponentIDType.PLUGINS; // デフォルトはplugin
     }
 
     // levelフォルダがある場合はworld
     const levelDatPath = join(path, "level.dat");
-    const hasLevelDat = await Deno.stat(levelDatPath).then(() => true).catch(() => false);
+    const hasLevelDat = await Deno.stat(levelDatPath).then(() => true).catch(
+      () => false,
+    );
     if (hasLevelDat) return ComponentIDType.WORLD;
   } catch {
     // 検出失敗
@@ -1838,7 +1866,9 @@ const registerImportedComponent = async (
     : await detectComponentType(entry.path);
 
   if (!componentType) {
-    console.warn(`${entry.name}: タイプを自動検出できませんでした。スキップします。`);
+    console.warn(
+      `${entry.name}: タイプを自動検出できませんでした。スキップします。`,
+    );
     return false;
   }
 
@@ -1904,7 +1934,9 @@ const runComponentsImport = async (
     const missing = selectedNames.filter((name) => !unregistered.has(name));
     if (missing.length) {
       console.warn(
-        `The following components are not available for import: ${missing.join(", ")}`,
+        `The following components are not available for import: ${
+          missing.join(", ")
+        }`,
       );
     }
     targetNames = selectedNames.filter((name) => unregistered.has(name));
@@ -1925,7 +1957,11 @@ const runComponentsImport = async (
       console.warn(`${name}: ソースが特定できなかったためスキップしました。`);
       continue;
     }
-    const registered = await registerImportedComponent(properties, entry, source);
+    const registered = await registerImportedComponent(
+      properties,
+      entry,
+      source,
+    );
     if (!registered) continue;
     imported.push(name);
   }

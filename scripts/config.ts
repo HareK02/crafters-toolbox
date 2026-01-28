@@ -1,4 +1,4 @@
-import { parse } from "jsr:@std/yaml";
+import { parse } from "@std/yaml";
 
 type RunnerConfig = {
   java_base_image?: string;
@@ -88,7 +88,8 @@ export function getSSHConfig(config: CRTBConfig): ResolvedSSHConfig {
     false,
   ) ?? false;
   const passwordValue = config.ssh?.auth?.password?.value?.trim();
-  const keyEnabled = coalesceBoolean(config.ssh?.auth?.keys?.enabled, true) ?? true;
+  const keyEnabled = coalesceBoolean(config.ssh?.auth?.keys?.enabled, true) ??
+    true;
 
   return {
     enabled: enabled ?? true,

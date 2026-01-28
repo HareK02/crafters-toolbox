@@ -1,13 +1,13 @@
-import { join } from "jsr:@std/path";
+import { join } from "@std/path";
 
 import { Command } from "../command.ts";
 import { dockerTest } from "../docker-test.ts";
 import {
+  getContainerName,
+  getContainerStatus,
+  getSSHServerConfig,
   runContainer,
   stopContainer,
-  getContainerStatus,
-  getContainerName,
-  getSSHServerConfig,
 } from "../docker-runner.ts";
 import { getSSHConfig, loadConfig } from "../config.ts";
 import type { ResolvedSSHConfig } from "../config.ts";
@@ -37,7 +37,9 @@ async function showStatus(sshConfig: ResolvedSSHConfig) {
     );
   } else {
     console.log(
-      `ssh-server: ${status.running ? "running" : "stopped"} (${status.state ?? "unknown"})`,
+      `ssh-server: ${status.running ? "running" : "stopped"} (${
+        status.state ?? "unknown"
+      })`,
     );
   }
 
@@ -74,7 +76,9 @@ async function safeChmod(path: string, mode: number) {
 async function getAuthorizedKeys(): Promise<string[]> {
   try {
     const content = await Deno.readTextFile(AUTHORIZED_KEYS_FILE);
-    return content.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length);
+    return content.split(/\r?\n/).map((line) => line.trim()).filter((line) =>
+      line.length
+    );
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) return [];
     throw error;
@@ -129,7 +133,9 @@ async function addAuthorizedKey(args: string[]) {
 
 async function removeAuthorizedKey(args: string[]) {
   if (!args.length) {
-    console.error("Specify the key index to remove (see `crtb ssh keys list`).");
+    console.error(
+      "Specify the key index to remove (see `crtb ssh keys list`).",
+    );
     return;
   }
   const index = Number.parseInt(args[0], 10);
@@ -182,7 +188,9 @@ async function readKeyFromFile(
     throw error;
   }
   const content = await Deno.readTextFile(filePath);
-  const keyLine = content.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length);
+  const keyLine = content.split(/\r?\n/).map((line) => line.trim()).find((
+    line,
+  ) => line.length);
   if (!keyLine) {
     if (strict) console.error(`Key file "${filePath}" is empty.`);
     return undefined;
@@ -294,7 +302,9 @@ const sshCommand: Command = {
   handler: async (args: string[]) => {
     if (args.length) {
       console.error(
-        `Unknown ssh subcommand: ${args[0]}. Use start, stop, keys, or no subcommand to view status.`,
+        `Unknown ssh subcommand: ${
+          args[0]
+        }. Use start, stop, keys, or no subcommand to view status.`,
       );
       return;
     }
