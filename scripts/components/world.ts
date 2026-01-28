@@ -8,6 +8,7 @@ import { IReference } from "../reference.ts";
 export class World implements IComponent {
   kind = ComponentIDType.WORLD;
   name = "world";
+  path?: string;
   reference?: IReference;
   source?: IComponent["source"];
   build?: IComponent["build"];
@@ -16,11 +17,13 @@ export class World implements IComponent {
   constructor(
     reference?: IReference,
     options?: {
+      path?: string;
       source?: IComponent["source"];
       build?: IComponent["build"];
       artifact?: IComponent["artifact"];
     },
   ) {
+    this.path = options?.path;
     this.reference = reference;
     this.source = options?.source;
     this.build = options?.build;

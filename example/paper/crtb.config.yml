@@ -1,0 +1,11 @@
+game_server:
+  max_memory: 8G
+  min_memory: 2G
+ssh:
+  enabled: true
+  auth:
+    keys:
+      enabled: true
+    password:
+      enabled: false
+      value: ""

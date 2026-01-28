@@ -12,12 +12,13 @@ import { World } from "../components/world.ts";
 import {
   ArtifactConfig,
   BuildConfig,
-  ComponentIDString,
   ComponentIDType,
   IComponent,
   SourceConfig,
 } from "../component.ts";
 import { readComponents } from "../components_reader.ts";
+
+type ComponentIDString = string;
 import { getJavaImage, loadConfig } from "../config.ts";
 import { getLocalIdentity, HOST_SUPPORTS_POSIX_IDS } from "../docker-env.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
@@ -515,16 +516,19 @@ const removeDeployedArtifacts = async (
   }
 };
 
-const componentBasePath = (component: IComponent) =>
-  join("./components", `${component.kind}s`, component.name);
+const componentBasePath = (component: IComponent): string => {
+  if (component.path) return component.path;
+  if (component.kind === ComponentIDType.WORLD) return "./server/world";
+  return `./components/${component.name}`;
+};
 
 export const ensureLocalPresence = async (
   component: IComponent,
   options?: { pull?: boolean },
 ): Promise<{ path: string; cached: boolean } | undefined> => {
   if (component.kind === ComponentIDType.WORLD) return undefined;
-  const baseDir = join("./components", `${component.kind}s`);
   const dest = componentBasePath(component);
+  const baseDir = dest.includes("/") ? dest.substring(0, dest.lastIndexOf("/")) : "./components";
 
   // If not forceful pull, prefer existing local directory
   if (!options?.pull) {
@@ -1050,7 +1054,7 @@ export const pickArtifactFile = async (
 
 const applyComponents = async (
   properties: PropertiesManager,
-  selected?: Set<ComponentIDString>,
+  selectedNames?: Set<string>,
   options?: { pull?: boolean },
 ) => {
   const serverType = properties.properties.server?.type;
@@ -1068,7 +1072,7 @@ const applyComponents = async (
   const components = properties
     .getComponentsAsArray()
     .filter((component) =>
-      selected ? selected.has(toComponentId(component)) : true
+      selectedNames ? selectedNames.has(component.name) : true
     );
   if (components.length === 0) {
     info("No components matched the selected filters.");
@@ -1368,45 +1372,29 @@ const applyComponents = async (
 };
 
 type ComponentListEntry = {
-  id: ComponentIDString;
-  type: ComponentIDType;
   name: string;
   component?: IComponent;
   registered: boolean;
 };
 
-const COMPONENT_GROUPS = [
-  { type: ComponentIDType.WORLD, label: "World" },
-  { type: ComponentIDType.DATAPACKS, label: "Datapacks" },
-  { type: ComponentIDType.PLUGINS, label: "Plugins" },
-  { type: ComponentIDType.RESOURCEPACKS, label: "Resourcepacks" },
-  { type: ComponentIDType.MODS, label: "Mods" },
-] as const;
-
-const LOCAL_SOURCE_BASE: Record<ComponentIDType, string> = {
-  [ComponentIDType.WORLD]: "./server/world",
-  [ComponentIDType.DATAPACKS]: "./components/datapacks",
-  [ComponentIDType.PLUGINS]: "./components/plugins",
-  [ComponentIDType.RESOURCEPACKS]: "./components/resourcepacks",
-  [ComponentIDType.MODS]: "./components/mods",
+const COMPONENT_TYPE_LABELS: Record<ComponentIDType, string> = {
+  [ComponentIDType.WORLD]: "world",
+  [ComponentIDType.DATAPACKS]: "datapack",
+  [ComponentIDType.PLUGINS]: "plugin",
+  [ComponentIDType.RESOURCEPACKS]: "resourcepack",
+  [ComponentIDType.MODS]: "mod",
 };
 
+const COMPONENTS_BASE_DIR = "./components";
+const WORLD_DEFAULT_PATH = "./server/world";
+
 type UnregisteredComponentEntry = {
-  id: ComponentIDString;
-  type: ComponentIDType;
-  name?: string;
+  name: string;
   path: string;
 };
 
-const resolveLocalComponentPath = (
-  type: ComponentIDType,
-  name?: string,
-): string | undefined => {
-  const base = LOCAL_SOURCE_BASE[type];
-  if (!base) return undefined;
-  if (type === ComponentIDType.WORLD) return base;
-  if (!name) return undefined;
-  return join(base, name);
+const resolveLocalComponentPath = (name: string): string => {
+  return join(COMPONENTS_BASE_DIR, name);
 };
 
 const pathExists = async (path: string) => {
@@ -1420,35 +1408,37 @@ const pathExists = async (path: string) => {
 
 const discoverUnregisteredComponents = async (
   properties: PropertiesManager,
-): Promise<Map<ComponentIDString, UnregisteredComponentEntry>> => {
-  const entries = new Map<ComponentIDString, UnregisteredComponentEntry>();
-  const registeredIds = new Set(
-    properties
-      .getComponentsAsArray()
-      .map((component) => toComponentId(component)),
-  );
+): Promise<Map<string, UnregisteredComponentEntry>> => {
+  const entries = new Map<string, UnregisteredComponentEntry>();
+
+  // 登録済みコンポーネントの名前とパスを収集
+  const registeredNames = new Set<string>();
+  const registeredPaths = new Set<string>();
+  for (const component of properties.getComponentsAsArray()) {
+    registeredNames.add(component.name);
+    const path = componentBasePath(component);
+    registeredPaths.add(path);
+  }
 
   try {
-    const currentComponents = await readComponents("./components");
-    for (const componentId of currentComponents) {
-      if (registeredIds.has(componentId)) continue;
-      const { type, name } = ComponentIDString.split(componentId);
-      const path = resolveLocalComponentPath(type, name);
-      if (!path) continue;
-      entries.set(componentId, { id: componentId, type, name, path });
+    // components/直下のディレクトリをスキャン
+    const dirNames = await readComponents(COMPONENTS_BASE_DIR);
+    for (const name of dirNames) {
+      const path = resolveLocalComponentPath(name);
+      // 名前またはパスで登録済みかチェック
+      if (registeredNames.has(name) || registeredPaths.has(path)) continue;
+      entries.set(name, { name, path });
     }
   } catch (error) {
     console.warn("Failed to scan ./components directory:", error);
   }
 
-  if (!registeredIds.has("world" as ComponentIDString)) {
-    const worldPath = resolveLocalComponentPath(ComponentIDType.WORLD);
-    if (worldPath && (await pathExists(worldPath))) {
+  // Worldのチェック（名前が"world"で登録されていない場合）
+  if (!registeredNames.has("world")) {
+    if (await pathExists(WORLD_DEFAULT_PATH)) {
       entries.set("world", {
-        id: "world",
-        type: ComponentIDType.WORLD,
-        name: undefined,
-        path: worldPath,
+        name: "world",
+        path: WORLD_DEFAULT_PATH,
       });
     }
   }
@@ -1501,25 +1491,21 @@ const detectComponentSource = async (
       "remote.origin.url",
     ]);
     if (remote.success) {
-      return { type: "git", url: remote.stdout.trim() || undefined };
+      return { type: "git", url: remote.stdout.trim() };
     }
   }
 
   return { type: "local", path: relativePath };
 };
 
-const fallbackLocalPath = (type: ComponentIDType, name?: string) => {
-  const base = LOCAL_SOURCE_BASE[type];
-  if (!base) return undefined;
-  if (type === ComponentIDType.WORLD) return base;
-  if (!name) return base;
-  return `${base}/${name}`;
+const fallbackLocalPath = (name: string) => {
+  if (name === "world") return WORLD_DEFAULT_PATH;
+  return `${COMPONENTS_BASE_DIR}/${name}`;
 };
 
 const formatSourceSummary = (
   component: IComponent | undefined,
-  type: ComponentIDType,
-  name?: string,
+  name: string,
 ) => {
   const source = component?.source;
   if (source) {
@@ -1548,9 +1534,8 @@ const formatSourceSummary = (
     }
   }
 
-  const fallback = fallbackLocalPath(type, name);
-  if (fallback) return `local ${fallback}`;
-  return "unknown source";
+  const fallback = fallbackLocalPath(name);
+  return `local ${fallback}`;
 };
 
 const loadPropertiesComponents = async () => {
@@ -1568,183 +1553,84 @@ const loadPropertiesComponents = async () => {
 };
 
 const renderComponentInventory = async () => {
-  const components = await loadPropertiesComponents();
-  const propertyMap = new Map<ComponentIDString, IComponent>();
-  const register = (component?: IComponent) => {
-    if (!component) return;
-    try {
-      propertyMap.set(component.toIDString(), component);
-    } catch (error) {
-      console.warn(`Failed to register component ${component.name}:`, error);
-    }
-  };
+  const componentsConfig = await loadPropertiesComponents();
 
-  register(components?.world);
-  components?.datapacks?.forEach(register);
-  components?.plugins?.forEach(register);
-  components?.resourcepacks?.forEach(register);
-  components?.mods?.forEach(register);
+  // 登録済みコンポーネントをマップに格納
+  const registeredMap = new Map<string, IComponent>();
+  if (componentsConfig?.world) {
+    registeredMap.set("world", componentsConfig.world);
+  }
+  componentsConfig?.datapacks?.forEach((c) => registeredMap.set(c.name, c));
+  componentsConfig?.plugins?.forEach((c) => registeredMap.set(c.name, c));
+  componentsConfig?.resourcepacks?.forEach((c) => registeredMap.set(c.name, c));
+  componentsConfig?.mods?.forEach((c) => registeredMap.set(c.name, c));
 
-  let discoveredIds: ComponentIDString[] = [];
+  // ファイルシステムから発見したコンポーネント
+  let discoveredNames: string[] = [];
   try {
-    discoveredIds = await readComponents("./components");
+    discoveredNames = await readComponents(COMPONENTS_BASE_DIR);
   } catch (error) {
     console.warn("Failed to scan ./components directory:", error);
   }
 
-  const combinedIds = new Set<ComponentIDString>();
-  discoveredIds.forEach((id) => combinedIds.add(id));
-  propertyMap.forEach((_component, id) => combinedIds.add(id));
-  if (propertyMap.has("world" as ComponentIDString)) {
-    combinedIds.add("world");
+  // すべてのコンポーネント名を収集
+  const allNames = new Set<string>();
+  discoveredNames.forEach((name) => allNames.add(name));
+  registeredMap.forEach((_component, name) => allNames.add(name));
+
+  // エントリーを作成
+  const entries: ComponentListEntry[] = [];
+  for (const name of allNames) {
+    entries.push({
+      name,
+      component: registeredMap.get(name),
+      registered: registeredMap.has(name),
+    });
   }
 
-  const groups = COMPONENT_GROUPS.map((group) => ({
-    ...group,
-    entries: [] as ComponentListEntry[],
-  }));
-  const groupLookup = new Map<ComponentIDType, (typeof groups)[number]>();
-  for (const group of groups) {
-    groupLookup.set(group.type, group);
-  }
+  // 名前順にソート
+  entries.sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+  );
 
-  for (const id of combinedIds) {
-    if (!id) continue;
-    let parsed;
-    try {
-      parsed = ComponentIDString.split(id);
-    } catch (error) {
-      console.warn(`Skipping unknown component id "${id}":`, error);
-      continue;
-    }
-    const group = groupLookup.get(parsed.type);
-    if (!group) continue;
-    const entry: ComponentListEntry = {
-      id,
-      type: parsed.type,
-      name: parsed.name ?? "world",
-      component: propertyMap.get(id),
-      registered: propertyMap.has(id),
-    };
-    group.entries.push(entry);
-  }
-
-  const anyRegistered = groups.some((group) => group.entries.length > 0);
-
-  for (let index = 0; index < groups.length; index++) {
-    const group = groups[index];
-    if (!group.entries.length) {
-      console.log(`${group.label}: (none)`);
-    } else {
-      group.entries.sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
-      );
-      const nameWidth = group.entries.reduce(
-        (width, entry) => Math.max(width, entry.name.length),
-        0,
-      );
-      console.log(`${group.label}:`);
-      for (const entry of group.entries) {
-        let summary = formatSourceSummary(
-          entry.component,
-          entry.type,
-          entry.name,
-        );
-
-        if (!entry.registered && entry.name) {
-          const path = resolveLocalComponentPath(entry.type, entry.name);
-          if (path) {
-            const detected = await detectComponentSource(path);
-            if (detected?.type === "git") {
-              const url = detected.url || "(no remote)";
-              const branch = detected.branch ? `+${detected.branch}` : "";
-              summary = `git${branch} ${url}`;
-            }
-          }
-        }
-
-        const suffix = entry.registered ? "" : "  (unregistered)";
-        console.log(`  - ${entry.name.padEnd(nameWidth)}  ${summary}${suffix}`);
-      }
-    }
-    if (index < groups.length - 1) console.log("");
-  }
-
-  if (!anyRegistered && combinedIds.size === 0) {
+  if (entries.length === 0) {
     console.log(
       "No components detected. Add entries under ./components or register them in crtb.properties.yml.",
     );
+    return;
   }
-};
 
-const COMPONENT_TOKEN_ALIASES: Record<string, ComponentIDType> = {
-  world: ComponentIDType.WORLD,
-  w: ComponentIDType.WORLD,
-  dp: ComponentIDType.DATAPACKS,
-  datapack: ComponentIDType.DATAPACKS,
-  datapacks: ComponentIDType.DATAPACKS,
-  pl: ComponentIDType.PLUGINS,
-  plugin: ComponentIDType.PLUGINS,
-  plugins: ComponentIDType.PLUGINS,
-  rp: ComponentIDType.RESOURCEPACKS,
-  resourcepack: ComponentIDType.RESOURCEPACKS,
-  resourcepacks: ComponentIDType.RESOURCEPACKS,
-  mod: ComponentIDType.MODS,
-  mods: ComponentIDType.MODS,
-};
+  const nameWidth = entries.reduce(
+    (width, entry) => Math.max(width, entry.name.length),
+    0,
+  );
 
-const resolveTypeAlias = (token: string): ComponentIDType | undefined => {
-  return COMPONENT_TOKEN_ALIASES[token.toLowerCase()];
-};
+  console.log("Components:");
+  for (const entry of entries) {
+    let summary = formatSourceSummary(entry.component, entry.name);
 
-const parseComponentSelectorToken = (
-  token: string,
-): ComponentIDString | null => {
-  const trimmed = token.trim();
-  if (!trimmed) return null;
-  if (trimmed === "world") return "world";
-  const [typeToken, name] = trimmed.split(":", 2);
-  if (!name) {
-    console.error(
-      `Invalid component selector "${token}". Use <type>:<name> (e.g., dp:example).`,
-    );
-    return null;
-  }
-  const type = resolveTypeAlias(typeToken);
-  if (!type) {
-    console.error(
-      `Unknown component type "${typeToken}" in selector "${token}".`,
-    );
-    return null;
-  }
-  if (type === ComponentIDType.WORLD) {
-    console.error(
-      'World component selectors should be specified simply as "world" without a name.',
-    );
-    return null;
-  }
-  const short = ComponentIDType.toShortString(type);
-  return `${short}:${name}` as ComponentIDString;
-};
+    // 未登録コンポーネントのソース検出
+    if (!entry.registered) {
+      const path = resolveLocalComponentPath(entry.name);
+      const detected = await detectComponentSource(path);
+      if (detected?.type === "git") {
+        const url = detected.url || "(no remote)";
+        const branch = detected.branch ? `+${detected.branch}` : "";
+        summary = `git${branch} ${url}`;
+      }
+    }
 
-const parseComponentArgs = (
-  tokens: string[],
-): ComponentIDString[] | null | undefined => {
-  if (tokens.length === 0) return undefined;
-  const parsed: ComponentIDString[] = [];
-  let hasError = false;
-  for (const token of tokens) {
-    const result = parseComponentSelectorToken(token);
-    if (result) parsed.push(result);
-    else hasError = true;
+    const typeLabel = entry.component
+      ? ` [${COMPONENT_TYPE_LABELS[entry.component.kind]}]`
+      : "";
+    const suffix = entry.registered ? "" : "  (unregistered)";
+    console.log(`  - ${entry.name.padEnd(nameWidth)}${typeLabel}  ${summary}${suffix}`);
   }
-  if (hasError) return null;
-  return parsed;
 };
 
 const promptComponentsForUpdate = async (
-  initialIds: ComponentIDString[] = [],
-): Promise<ComponentIDString[] | undefined> => {
+  initialNames: string[] = [],
+): Promise<string[] | undefined> => {
   try {
     const yaml = await Deno.readTextFile("./crtb.properties.yml");
     const manager = PropertiesManager.fromYaml(yaml);
@@ -1754,22 +1640,11 @@ const promptComponentsForUpdate = async (
       return undefined;
     }
     const options = defined.map((component) => {
-      const id = toComponentId(component);
-      const groupLabel = COMPONENT_GROUPS.find((g) =>
-        g.type === component.kind
-      )?.label ??
-        component.kind;
-      const summary = formatSourceSummary(
-        component,
-        component.kind,
-        component.name,
-      );
-      const label = component.kind === ComponentIDType.WORLD
-        ? "world"
-        : component.name;
+      const typeLabel = COMPONENT_TYPE_LABELS[component.kind];
+      const summary = formatSourceSummary(component, component.name);
       return {
-        value: id,
-        label: `${label} (${groupLabel})`,
+        value: component.name,
+        label: `${component.name} [${typeLabel}]`,
         hint: truncateHint(summary),
       };
     });
@@ -1780,27 +1655,23 @@ const promptComponentsForUpdate = async (
         "更新するコンポーネントを選択してください (Space で選択, Enter で確定)",
       options,
       required: true,
-      initialValues: initialIds,
-      cursorAt: initialIds[0],
+      initialValues: initialNames,
+      cursorAt: initialNames[0],
     });
     if (prompts.isCancel(selection) || !Array.isArray(selection)) {
-      // console.log("コンポーネントの選択をキャンセルしました。");
       return undefined;
     }
     if (selection.length === 0) {
       console.log("コンポーネントが選択されていません。");
       return undefined;
     }
-    return selection as ComponentIDString[];
+    return selection as string[];
   } catch (error) {
     console.error("Failed to load components for selection:", error);
     return undefined;
   }
 };
 
-const getComponentGroupLabel = (type: ComponentIDType) => {
-  return COMPONENT_GROUPS.find((g) => g.type === type)?.label ?? type;
-};
 
 const truncateHint = (text: string, max = 60) => {
   if (text.length <= max) return text;
@@ -1808,27 +1679,21 @@ const truncateHint = (text: string, max = 60) => {
 };
 
 const promptComponentsForImport = async (
-  unregistered: Map<ComponentIDString, UnregisteredComponentEntry>,
-  initialIds: ComponentIDString[] = [],
-): Promise<ComponentIDString[] | undefined> => {
+  unregistered: Map<string, UnregisteredComponentEntry>,
+  initialNames: string[] = [],
+): Promise<string[] | undefined> => {
   if (unregistered.size === 0) {
     console.log("インポート可能なコンポーネントはありません。");
     return undefined;
   }
 
   const sorted = [...unregistered.values()].sort((a, b) =>
-    (a.name ?? a.id).localeCompare(b.name ?? b.id, undefined, {
-      sensitivity: "base",
-    })
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
   );
   const options = sorted.map((entry) => {
-    const label = entry.type === ComponentIDType.WORLD
-      ? "world"
-      : (entry.name ?? entry.id);
-    const groupLabel = getComponentGroupLabel(entry.type);
     return {
-      value: entry.id,
-      label: `${label} (${groupLabel})`,
+      value: entry.name,
+      label: entry.name,
       hint: truncateHint(entry.path),
     };
   });
@@ -1839,73 +1704,60 @@ const promptComponentsForImport = async (
       "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",
     options,
     required: true,
-    initialValues: initialIds,
-    cursorAt: initialIds[0],
+    initialValues: initialNames,
+    cursorAt: initialNames[0],
   });
   if (prompts.isCancel(selection) || !Array.isArray(selection)) {
-    // console.log("コンポーネントの選択をキャンセルしました。");
     return undefined;
   }
   if (selection.length === 0) {
     console.log("コンポーネントが選択されていません。");
     return undefined;
   }
-  return selection as ComponentIDString[];
+  return selection as string[];
 };
 
 const runComponentsUpdate = async (
   args: string[],
-  preselected?: ComponentIDString[],
+  preselectedNames?: string[],
   options?: { pull?: boolean },
 ) => {
-  const selectionFromArgs = preselected?.length
-    ? preselected
-    : parseComponentArgs(args);
-  if (selectionFromArgs === null) return;
+  // argsからコンポーネント名のリストを取得（直接名前を渡す）
+  const selectedNames = preselectedNames?.length ? preselectedNames : args;
 
   try {
     const properties = PropertiesManager.fromYaml(
       Deno.readTextFileSync("./crtb.properties.yml"),
     );
-    const availableIds = new Set(
-      properties
-        .getComponentsAsArray()
-        .map((component) => toComponentId(component)),
+    const availableNames = new Set(
+      properties.getComponentsAsArray().map((component) => component.name),
     );
 
     try {
-      const currentComponents = await readComponents("./components");
-      const unregisteredComponents = currentComponents.filter(
-        (component) => !availableIds.has(component),
+      const discoveredNames = await readComponents(COMPONENTS_BASE_DIR);
+      const unregisteredNames = discoveredNames.filter(
+        (name) => !availableNames.has(name),
       );
-      if (unregisteredComponents.length) {
+      if (unregisteredNames.length) {
         console.warn(
-          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${
-            unregisteredComponents.join(
-              ", ",
-            )
-          }`,
+          `The following components exist locally but are not registered in crtb.properties.yml and were skipped: ${unregisteredNames.join(", ")}`,
         );
       }
     } catch (error) {
       console.warn("Failed to scan ./components directory:", error);
     }
 
-    let selectedSet: Set<ComponentIDString> | undefined;
-    if (selectionFromArgs && selectionFromArgs.length) {
-      const matched: ComponentIDString[] = [];
-      const missing: ComponentIDString[] = [];
-      for (const id of selectionFromArgs) {
-        if (availableIds.has(id)) matched.push(id);
-        else missing.push(id);
+    let selectedSet: Set<string> | undefined;
+    if (selectedNames && selectedNames.length) {
+      const matched: string[] = [];
+      const missing: string[] = [];
+      for (const name of selectedNames) {
+        if (availableNames.has(name)) matched.push(name);
+        else missing.push(name);
       }
       if (missing.length) {
         console.warn(
-          `The following components are not registered and were skipped: ${
-            missing.join(
-              ", ",
-            )
-          }`,
+          `The following components are not registered and were skipped: ${missing.join(", ")}`,
         );
       }
       if (!matched.length) {
@@ -1921,67 +1773,113 @@ const runComponentsUpdate = async (
   }
 };
 
-const registerImportedComponent = (
+const detectComponentType = async (
+  path: string,
+): Promise<ComponentIDType | undefined> => {
+  try {
+    // pack.mcmetaが存在する場合はdatapackまたはresourcepack
+    const packMcmetaPath = join(path, "pack.mcmeta");
+    try {
+      await Deno.stat(packMcmetaPath);
+      // dataフォルダがあればdatapack、assetsフォルダがあればresourcepack
+      const dataPath = join(path, "data");
+      const assetsPath = join(path, "assets");
+      const hasData = await Deno.stat(dataPath).then(() => true).catch(() => false);
+      const hasAssets = await Deno.stat(assetsPath).then(() => true).catch(() => false);
+      if (hasData) return ComponentIDType.DATAPACKS;
+      if (hasAssets) return ComponentIDType.RESOURCEPACKS;
+      return ComponentIDType.DATAPACKS; // デフォルトはdatapack
+    } catch {
+      // pack.mcmetaがない
+    }
+
+    // build.gradleまたはbuild.gradle.ktsがある場合はpluginまたはmod
+    const buildGradlePath = join(path, "build.gradle");
+    const buildGradleKtsPath = join(path, "build.gradle.kts");
+    const hasBuildGradle = await Deno.stat(buildGradlePath).then(() => true).catch(() => false);
+    const hasBuildGradleKts = await Deno.stat(buildGradleKtsPath).then(() => true).catch(() => false);
+    if (hasBuildGradle || hasBuildGradleKts) {
+      // fabric.mod.jsonがあればmod
+      const fabricModJsonPath = join(path, "src/main/resources/fabric.mod.json");
+      const hasFabricMod = await Deno.stat(fabricModJsonPath).then(() => true).catch(() => false);
+      if (hasFabricMod) return ComponentIDType.MODS;
+      // mods.tomlがあればmod (Forge/NeoForge)
+      const modsTomlPath = join(path, "src/main/resources/META-INF/mods.toml");
+      const hasModsToml = await Deno.stat(modsTomlPath).then(() => true).catch(() => false);
+      if (hasModsToml) return ComponentIDType.MODS;
+      // plugin.ymlがあればplugin
+      const pluginYmlPath = join(path, "src/main/resources/plugin.yml");
+      const hasPluginYml = await Deno.stat(pluginYmlPath).then(() => true).catch(() => false);
+      if (hasPluginYml) return ComponentIDType.PLUGINS;
+      // paper-plugin.ymlがあればplugin
+      const paperPluginYmlPath = join(path, "src/main/resources/paper-plugin.yml");
+      const hasPaperPluginYml = await Deno.stat(paperPluginYmlPath).then(() => true).catch(() => false);
+      if (hasPaperPluginYml) return ComponentIDType.PLUGINS;
+      return ComponentIDType.PLUGINS; // デフォルトはplugin
+    }
+
+    // levelフォルダがある場合はworld
+    const levelDatPath = join(path, "level.dat");
+    const hasLevelDat = await Deno.stat(levelDatPath).then(() => true).catch(() => false);
+    if (hasLevelDat) return ComponentIDType.WORLD;
+  } catch {
+    // 検出失敗
+  }
+  return undefined;
+};
+
+const registerImportedComponent = async (
   properties: PropertiesManager,
   entry: UnregisteredComponentEntry,
   source: SourceConfig,
-): boolean => {
+): Promise<boolean> => {
+  const componentType = entry.name === "world"
+    ? ComponentIDType.WORLD
+    : await detectComponentType(entry.path);
+
+  if (!componentType) {
+    console.warn(`${entry.name}: タイプを自動検出できませんでした。スキップします。`);
+    return false;
+  }
+
   const baseOptions = { source };
   const component = properties.properties.components;
-  switch (entry.type) {
+
+  switch (componentType) {
     case ComponentIDType.WORLD:
       component.world = new World(undefined, baseOptions);
       return true;
     case ComponentIDType.DATAPACKS:
-      if (!entry.name) {
-        console.warn(`Component ${entry.id} has no name; skipping import.`);
-        return false;
-      }
       component.datapacks ??= [];
       component.datapacks.push(
         new Datapack(entry.name, undefined, baseOptions),
       );
       return true;
     case ComponentIDType.PLUGINS:
-      if (!entry.name) {
-        console.warn(`Component ${entry.id} has no name; skipping import.`);
-        return false;
-      }
       component.plugins ??= [];
       component.plugins.push(new Plugin(entry.name, undefined, baseOptions));
       return true;
     case ComponentIDType.RESOURCEPACKS:
-      if (!entry.name) {
-        console.warn(`Component ${entry.id} has no name; skipping import.`);
-        return false;
-      }
       component.resourcepacks ??= [];
       component.resourcepacks.push(
         new Resourcepack(entry.name, undefined, baseOptions),
       );
       return true;
     case ComponentIDType.MODS:
-      if (!entry.name) {
-        console.warn(`Component ${entry.id} has no name; skipping import.`);
-        return false;
-      }
       component.mods ??= [];
       component.mods.push(new Mod(entry.name, undefined, baseOptions));
       return true;
     default:
-      console.warn(`Unknown component type: ${entry.type}`);
+      console.warn(`Unknown component type: ${componentType}`);
       return false;
   }
 };
 
 const runComponentsImport = async (
   args: string[],
-  preselected?: ComponentIDString[],
+  preselectedNames?: string[],
 ) => {
-  const selectionFromArgs = preselected?.length
-    ? preselected
-    : parseComponentArgs(args);
-  if (selectionFromArgs === null) return;
+  const selectedNames = preselectedNames?.length ? preselectedNames : args;
 
   let properties: PropertiesManager;
   try {
@@ -2001,39 +1899,35 @@ const runComponentsImport = async (
     return;
   }
 
-  let targetIds: ComponentIDString[];
-  if (selectionFromArgs && selectionFromArgs.length) {
-    const missing = selectionFromArgs.filter((id) => !unregistered.has(id));
+  let targetNames: string[];
+  if (selectedNames && selectedNames.length) {
+    const missing = selectedNames.filter((name) => !unregistered.has(name));
     if (missing.length) {
       console.warn(
-        `The following components are not available for import: ${
-          missing.join(
-            ", ",
-          )
-        }`,
+        `The following components are not available for import: ${missing.join(", ")}`,
       );
     }
-    targetIds = selectionFromArgs.filter((id) => unregistered.has(id));
-    if (!targetIds.length) {
+    targetNames = selectedNames.filter((name) => unregistered.has(name));
+    if (!targetNames.length) {
       console.error("インポート対象のコンポーネントが見つかりませんでした。");
       return;
     }
   } else {
-    targetIds = [...unregistered.keys()];
+    targetNames = [...unregistered.keys()];
   }
 
-  const imported: ComponentIDString[] = [];
-  for (const id of targetIds) {
-    const entry = unregistered.get(id);
+  const imported: string[] = [];
+  for (const name of targetNames) {
+    const entry = unregistered.get(name);
     if (!entry) continue;
     const source = await detectComponentSource(entry.path);
     if (!source) {
-      console.warn(`${id}: ソースが特定できなかったためスキップしました。`);
+      console.warn(`${name}: ソースが特定できなかったためスキップしました。`);
       continue;
     }
-    const registered = registerImportedComponent(properties, entry, source);
+    const registered = await registerImportedComponent(properties, entry, source);
     if (!registered) continue;
-    imported.push(id);
+    imported.push(name);
   }
 
   if (!imported.length) {
@@ -2054,7 +1948,7 @@ const runComponentsImport = async (
 };
 
 const runComponentsImportInteractive = async () => {
-  let lastSelection: ComponentIDString[] = [];
+  let lastSelection: string[] = [];
   while (true) {
     try {
       const properties = PropertiesManager.fromYaml(
@@ -2069,7 +1963,7 @@ const runComponentsImportInteractive = async () => {
       }
 
       // Filter lastSelection to only those that are still unregistered
-      lastSelection = lastSelection.filter((id) => unregistered.has(id));
+      lastSelection = lastSelection.filter((name) => unregistered.has(name));
 
       const selection = await promptComponentsForImport(
         unregistered,
@@ -2082,15 +1976,7 @@ const runComponentsImportInteractive = async () => {
         return;
       }
       await runComponentsImport([], selection);
-      lastSelection = selection; // Actually IMPORTED ones are now registered, so they won't appear next time.
-      // So restoring lastSelection for IMPORT might mean selecting *other* things?
-      // Wait, if I imported them, they are gone from the list.
-      // So restoring selection is moot for import, unless I failed to import?
-      // But the user requested "same state".
-      // For IMPORT, "Same state" might mean "Show the list again".
-      // But selected items are now imported.
-      // So I should start with empty selection or whatever remains?
-      // I'll leave lastSelection logic but it will likely be filtered out.
+      lastSelection = selection;
     } catch (error) {
       console.error("Failed to prepare import flow:", error);
       break;
@@ -2121,12 +2007,12 @@ const cmd: Command = {
     {
       name: "update",
       description:
-        "Update components (optionally pass selectors like dp:example to limit scope)",
+        "Update components (optionally pass component names to limit scope)",
       handler: async (args: string[]) => {
         await runComponentsUpdate(args);
       },
       interactiveHandler: async () => {
-        let lastSelection: ComponentIDString[] = [];
+        let lastSelection: string[] = [];
         while (true) {
           const selection = await promptComponentsForUpdate(lastSelection);
           if (!selection || selection.length === 0) {
@@ -2146,7 +2032,7 @@ const cmd: Command = {
         await runComponentsUpdate(args, undefined, { pull: true });
       },
       interactiveHandler: async () => {
-        let lastSelection: ComponentIDString[] = [];
+        let lastSelection: string[] = [];
         while (true) {
           const selection = await promptComponentsForUpdate(lastSelection);
           if (!selection || selection.length === 0) {

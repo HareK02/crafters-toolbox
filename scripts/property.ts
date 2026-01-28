@@ -6,6 +6,7 @@ import { World } from "./components/world.ts";
 import {
   ArtifactConfig,
   BuildConfig,
+  ComponentIDType,
   IComponent,
   SourceConfig,
 } from "./component.ts";
@@ -71,12 +72,31 @@ export class PropertiesManager {
   }
   static fromYaml(yaml: string): PropertiesManager {
     try {
-      const property = parse(yaml) as Properties;
-      if (!property.components) {
-        property.components = {};
-      }
+      const rawProperty = parse(yaml) as {
+        server: Properties["server"];
+        components?: Record<
+          string,
+          {
+            type: string;
+            path?: string;
+            reference?: any;
+            source?: SourceConfig;
+            build?: BuildConfig;
+            artifact?: ArtifactConfig;
+          }
+        >;
+        exports?: Properties["exports"];
+      };
+
+      const property: Properties = {
+        server: rawProperty.server,
+        components: {},
+        exports: rawProperty.exports ?? {},
+      };
+
       const extractOptions = (
         raw: {
+          path?: string;
           reference?: any;
           source?: SourceConfig;
           build?: BuildConfig;
@@ -95,6 +115,7 @@ export class PropertiesManager {
                 : undefined
             : undefined);
         return {
+          path: raw.path,
           reference: raw.reference,
           source,
           build: raw.build,
@@ -102,70 +123,70 @@ export class PropertiesManager {
         };
       };
 
-      const normalize = <T extends IComponent>(
-        input:
-          | Record<string, Partial<IComponent>>
-          | Partial<IComponent>[]
-          | undefined,
-        factory: (name: string, opts: Partial<IComponent>) => T,
-      ): T[] | undefined => {
-        if (input === undefined) return undefined;
-        if (Array.isArray(input)) {
-          return input.map((item) =>
-            factory(item.name ?? "", extractOptions(item as any))
-          );
-        }
-        return Object.entries(input).map(([key, value]) =>
-          factory(key, extractOptions(value as any))
-        );
-      };
+      if (rawProperty.components && typeof rawProperty.components === "object") {
+        for (const [name, rawComponent] of Object.entries(rawProperty.components)) {
+          if (!rawComponent || typeof rawComponent !== "object") continue;
+          const opts = extractOptions(rawComponent);
+          const componentType = rawComponent.type as string;
 
-      if (property.components.world) {
-        const opts = extractOptions(
-          property.components.world as unknown as any,
-        );
-        property.components.world = new World(opts.reference, {
-          source: opts.source,
-          build: opts.build,
-          artifact: opts.artifact,
-        });
+          switch (componentType) {
+            case ComponentIDType.WORLD:
+              property.components.world = new World(opts.reference, {
+                path: opts.path,
+                source: opts.source,
+                build: opts.build,
+                artifact: opts.artifact,
+              });
+              break;
+            case ComponentIDType.DATAPACKS:
+              property.components.datapacks ??= [];
+              property.components.datapacks.push(
+                new Datapack(name, opts.reference, {
+                  path: opts.path,
+                  source: opts.source,
+                  build: opts.build,
+                  artifact: opts.artifact,
+                }),
+              );
+              break;
+            case ComponentIDType.PLUGINS:
+              property.components.plugins ??= [];
+              property.components.plugins.push(
+                new Plugin(name, opts.reference, {
+                  path: opts.path,
+                  source: opts.source,
+                  build: opts.build,
+                  artifact: opts.artifact,
+                }),
+              );
+              break;
+            case ComponentIDType.RESOURCEPACKS:
+              property.components.resourcepacks ??= [];
+              property.components.resourcepacks.push(
+                new Resourcepack(name, opts.reference, {
+                  path: opts.path,
+                  source: opts.source,
+                  build: opts.build,
+                  artifact: opts.artifact,
+                }),
+              );
+              break;
+            case ComponentIDType.MODS:
+              property.components.mods ??= [];
+              property.components.mods.push(
+                new Mod(name, opts.reference, {
+                  path: opts.path,
+                  source: opts.source,
+                  build: opts.build,
+                  artifact: opts.artifact,
+                }),
+              );
+              break;
+            default:
+              console.warn(`Unknown component type: ${componentType} for ${name}`);
+          }
+        }
       }
-      property.components.datapacks = normalize(
-        property.components.datapacks as any,
-        (name, opts) =>
-          new Datapack(name, opts.reference, {
-            source: opts.source,
-            build: opts.build,
-            artifact: opts.artifact,
-          }),
-      );
-      property.components.plugins = normalize(
-        property.components.plugins as any,
-        (name, opts) =>
-          new Plugin(name, opts.reference, {
-            source: opts.source,
-            build: opts.build,
-            artifact: opts.artifact,
-          }),
-      );
-      property.components.resourcepacks = normalize(
-        property.components.resourcepacks as any,
-        (name, opts) =>
-          new Resourcepack(name, opts.reference, {
-            source: opts.source,
-            build: opts.build,
-            artifact: opts.artifact,
-          }),
-      );
-      property.components.mods = normalize(
-        property.components.mods as any,
-        (name, opts) =>
-          new Mod(name, opts.reference, {
-            source: opts.source,
-            build: opts.build,
-            artifact: opts.artifact,
-          }),
-      );
 
       return new PropertiesManager(property);
     } catch (error) {
@@ -174,19 +195,42 @@ export class PropertiesManager {
   }
   toYaml(): string {
     // if contains undefined, remove it
-    const data = JSON.parse(JSON.stringify(this.properties));
-    for (const key in data) {
-      if (data[key] === undefined) {
-        delete data[key];
+    const data: Record<string, unknown> = {
+      server: this.properties.server,
+      components: {} as Record<string, unknown>,
+    };
+
+    if (this.properties.exports && Object.keys(this.properties.exports).length > 0) {
+      data.exports = this.properties.exports;
+    }
+
+    const components = data.components as Record<string, unknown>;
+
+    const serializeComponent = (c: IComponent): Record<string, unknown> => {
+      const obj: Record<string, unknown> = {
+        type: c.kind,
+      };
+
+      // pathはデフォルト値と異なる場合のみ出力
+      const defaultPath = c.kind === ComponentIDType.WORLD
+        ? "./server/world"
+        : `./components/${c.name}`;
+      if (c.path && c.path !== defaultPath) {
+        obj.path = c.path;
       }
-    }
 
-    data.components = {};
+      if (c.source) obj.source = c.source;
+      if (c.build) obj.build = c.build;
+      if (c.artifact) obj.artifact = c.artifact;
+
+      return obj;
+    };
+
     if (this.properties.components.world !== undefined) {
-      data.components.world = this.properties.components.world;
+      components["world"] = serializeComponent(this.properties.components.world);
     }
 
-    const list = [];
+    const list: IComponent[] = [];
     if (this.properties.components.datapacks !== undefined) {
       list.push(...Object.values(this.properties.components.datapacks));
     }
@@ -199,16 +243,9 @@ export class PropertiesManager {
     if (this.properties.components.mods !== undefined) {
       list.push(...Object.values(this.properties.components.mods));
     }
-    for (const c of Object.values(list)) {
-      const type = c.kind + "s";
-      const obj = JSON.parse(JSON.stringify(c));
-      const name = obj.name;
-      delete obj.kind;
-      delete obj.name;
-      if (data.components[type] === undefined) {
-        data.components[type] = {};
-      }
-      data.components[type][name] = obj;
+
+    for (const c of list) {
+      components[c.name] = serializeComponent(c);
     }
 
     return stringify(data);

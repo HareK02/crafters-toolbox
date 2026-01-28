@@ -87,6 +87,7 @@ export type ArtifactConfig = {
 export interface IComponent {
   kind: ComponentIDType;
   name: string;
+  path?: string;
   reference?: IReference;
   source?: SourceConfig;
   build?: BuildConfig;
