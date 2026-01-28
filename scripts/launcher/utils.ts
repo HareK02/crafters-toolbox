@@ -1,4 +1,4 @@
-import { dirname, isAbsolute, join, resolve as resolvePath } from "@std/path";
+import { dirname } from "@std/path";
 import { ensureDir } from "@std/fs";
 
 export const DEFAULT_USER_AGENT =

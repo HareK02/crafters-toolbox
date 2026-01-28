@@ -4,6 +4,7 @@ const cmd: Command = {
   name: "help",
   description: "Show help information",
   handler: async (args: string[]) => {
+    await Promise.resolve(); // Satisfy Command.handler type
     if (args.length === 0) {
       console.log(
         COMMANDS.map(

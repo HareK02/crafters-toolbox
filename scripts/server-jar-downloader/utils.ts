@@ -1,9 +1,5 @@
 import { dirname, isAbsolute, join, resolve as resolvePath } from "@std/path";
-import {
-  DownloadResolution,
-  DownloadServerJarOptions,
-  HttpClient,
-} from "./types.ts";
+import { DownloadServerJarOptions, HttpClient } from "./types.ts";
 
 export const DEFAULT_USER_AGENT =
   "Crafter's Toolbox ServerJarDownloader (+https://github.com/crafters-toolbox)";

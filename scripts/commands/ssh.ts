@@ -290,6 +290,7 @@ const sshCommand: Command = {
           name: "path",
           description: "Show the location of authorized_keys",
           handler: async () => {
+            await Promise.resolve(); // Satisfy Command.handler type
             console.log(AUTHORIZED_KEYS_FILE);
           },
         },

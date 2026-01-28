@@ -1,4 +1,4 @@
-import { dirname, join } from "@std/path";
+import { join } from "@std/path";
 import { downloadFile, extractZip, fetchJson, HttpClient } from "./utils.ts";
 import {
   AssetIndex,
@@ -31,34 +31,8 @@ export async function getVersionJson(
 
 function checkRules(rules?: Rule[]): boolean {
   if (!rules) return true;
-  let allowed = false;
-  // Default depends on the first rule action usually?
-  // Actually, Mojang rules: if invalid OS, disallow.
-  // Logic: Iterate. Default is false if rules exist? No, default allowed unless disallowed?
-  // "Libraries ... can have a rules property ... If the property is not present, the library is allowed."
-  // If present: "The first rule that matches determines whether the library is allowed or disallowed."
-
-  // Default logic if rules array is empty? (Usually not empty if present).
-  // If no rules match, what is the default?
-  // Usually: disallowed if it's an "allow" list?
-  // Let's assume standard behavior:
-  // If first rule is 'allow', base is disallowed.
-  // If first rule is 'disallow', base is allowed.
-
-  // Actually, simple iteration:
-  // Start with "false" if rules exist?
-  // Mojang wiki: "The array is processed from top to bottom. The first rule that matches the current system environment determines the result."
-  // BUT what if NONE match?
-  // "If no rules match, the library is allowed." -> Wait, really? check wiki.
-  // Wiki: "Artifacts are only downloaded if they are allowed ... If the `rules` list is missing, it is allowed."
-
-  // Practical implementation:
-  let result = false; // "If rules are present, default to disallow"?
-  // Actually, most rules start with "action": "allow" (all), then "disallow" specific OS.
-  // Or "allow" specific OS.
-
-  // Let's implement robustly:
-  // Search for the first MATCHING rule.
+  // Mojang rules: process from top to bottom, first matching rule determines result.
+  // If no rules match, default to disallowed.
   for (const rule of rules) {
     if (rule.os) {
       if (rule.os.name === "linux") {
@@ -103,7 +77,7 @@ export async function resolveAssets(
   const BATCH_SIZE = 50;
   for (let i = 0; i < objects.length; i += BATCH_SIZE) {
     const batch = objects.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async ([name, obj]) => {
+    await Promise.all(batch.map(async ([_name, obj]) => {
       const hashPrefix = obj.hash.substring(0, 2);
       const path = join(objectsDir, hashPrefix, obj.hash);
       const url = `${RESOURCES_URL}/${hashPrefix}/${obj.hash}`;

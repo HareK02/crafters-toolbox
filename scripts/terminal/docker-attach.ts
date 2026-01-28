@@ -22,8 +22,7 @@ function writeRaw(text: string | Uint8Array) {
 }
 
 // --- Configuration ---
-// --- Configuration ---
-const FOOTER_HEIGHT = 2;
+const _FOOTER_HEIGHT = 2; // Reserved for future use
 
 type ServerStatus =
   | "ONLINE"
@@ -230,8 +229,8 @@ export async function attachToContainerRefactored(
     console.warn("Raw mode failed");
   }
 
-  // Start Input Loop
-  const inputPromise = runInputLoop(
+  // Start Input Loop (runs in background, no need to await)
+  runInputLoop(
     state,
     () => currentConn,
     () => {
@@ -317,7 +316,7 @@ export async function attachToContainerRefactored(
         } catch {
           // Connection already closed - ignore
         }
-      } catch (e) {
+      } catch {
         // Connection failed
       }
 

@@ -45,7 +45,7 @@ const promptComponentsForUpdate = async (
       };
     });
 
-    const prompts = await import("npm:@clack/prompts");
+    const prompts = await import("@clack/prompts");
     const selection = await prompts.multiselect({
       message:
         "更新するコンポーネントを選択してください (Space で選択, Enter で確定)",
@@ -88,7 +88,7 @@ const promptComponentsForImport = async (
     };
   });
 
-  const prompts = await import("npm:@clack/prompts");
+  const prompts = await import("@clack/prompts");
   const selection = await prompts.multiselect({
     message:
       "インポートするコンポーネントを選択してください (Space で選択, Enter で確定)",

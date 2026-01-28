@@ -202,6 +202,7 @@ const clientCommand: Command = {
     },
   ],
   handler: async (_args) => {
+    await Promise.resolve(); // Satisfy Command.handler type
     console.log("Use `crtb client start`");
   },
 };

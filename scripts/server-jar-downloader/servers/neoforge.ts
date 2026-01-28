@@ -49,6 +49,7 @@ export async function pickNeoForgeBuild(
   minecraftVersion: string,
   spec: BuildSpecifier,
 ): Promise<string> {
+  await Promise.resolve(); // Maintain async signature for caller compatibility
   if (spec.kind === "exact") {
     if (!versions.includes(spec.value)) {
       throw new Error(`NeoForge build ${spec.value} was not found.`);

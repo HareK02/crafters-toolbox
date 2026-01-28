@@ -36,7 +36,10 @@ Deno.test("PropertiesManager.fromYaml - parses components", () => {
 Deno.test("PropertiesManager.fromYaml - parses world component", () => {
   const manager = PropertiesManager.fromYaml(PROPERTIES_WITH_WORLD);
 
-  assertEquals(manager.properties.components.world?.kind, ComponentIDType.WORLD);
+  assertEquals(
+    manager.properties.components.world?.kind,
+    ComponentIDType.WORLD,
+  );
   assertEquals(manager.properties.components.world?.source?.type, "local");
 });
 
@@ -111,7 +114,10 @@ components:
   const components = manager.getComponentsAsArray();
 
   assertEquals(components.length, 6);
-  assertEquals(components.filter((c) => c.kind === ComponentIDType.WORLD).length, 1);
+  assertEquals(
+    components.filter((c) => c.kind === ComponentIDType.WORLD).length,
+    1,
+  );
   assertEquals(
     components.filter((c) => c.kind === ComponentIDType.DATAPACKS).length,
     2,
@@ -124,5 +130,8 @@ components:
     components.filter((c) => c.kind === ComponentIDType.RESOURCEPACKS).length,
     1,
   );
-  assertEquals(components.filter((c) => c.kind === ComponentIDType.MODS).length, 1);
+  assertEquals(
+    components.filter((c) => c.kind === ComponentIDType.MODS).length,
+    1,
+  );
 });

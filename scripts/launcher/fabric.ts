@@ -46,20 +46,8 @@ export async function resolveFabricLibraries(
       group.replace(/\./g, "/")
     }/${artifact}/${version}/${artifact}-${version}.jar`;
 
-    // Base URL: lib.url or maven central or fabric maven
-    const baseUrl = lib.downloads?.artifact?.url
-      ? ""
-      : (lib.name.includes("fabric")
-        ? FABRIC_META_URL
-        : "https://repo1.maven.org/maven2/");
-    // Wait, Fabric JSON usually provides 'url' property in the library object if it's external?
-    // Let's check type definition. Common library format:
-    // { name, url (optional, base maven repo) }
-
-    // We need to support the 'url' property on Library type (I missed adding it to type definition?)
-    // Let's assume standard Maven resolution if no explicit artifact.
-
-    const libraryUrl = lib.url || "https://repo1.maven.org/maven2/"; // Fallback to central
+    // Library URL: use explicit url property or fall back to maven central
+    const libraryUrl = lib.url || "https://repo1.maven.org/maven2/";
     const fullUrl = lib.downloads?.artifact?.url || `${libraryUrl}${path}`;
 
     const localPath = join(libsDir, path);

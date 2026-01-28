@@ -1,5 +1,4 @@
-import { dirname, join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
 import { createHttpClient, downloadFile } from "./utils.ts";
 import { LauncherOptions } from "./types.ts";
 import {
@@ -38,8 +37,8 @@ export async function launchClient(options: LauncherOptions) {
   );
 
   let mainClass = versionJson.mainClass;
-  let gameArgs = versionJson.arguments?.game || [];
-  let jvmArgs = versionJson.arguments?.jvm || [];
+  const gameArgs = versionJson.arguments?.game || [];
+  const jvmArgs = versionJson.arguments?.jvm || [];
 
   // 4. Fabric (if requested)
   let fabricCp: string[] = [];

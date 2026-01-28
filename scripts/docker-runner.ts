@@ -66,7 +66,10 @@ export async function getContainerStatus(containerName: string): Promise<{
   } catch (error) {
     // Docker inspect failed - container likely doesn't exist or docker daemon is unavailable
     if (Deno.env.get("CRTB_DEBUG")) {
-      console.debug(`[docker] Failed to inspect container ${containerName}:`, error);
+      console.debug(
+        `[docker] Failed to inspect container ${containerName}:`,
+        error,
+      );
     }
     return { exists: false, running: false };
   }

@@ -104,7 +104,10 @@ Deno.test("hasLegacyConfig - detects ssh_enabled at root", () => {
 });
 
 Deno.test("hasLegacyConfig - detects develop_server", () => {
-  assertEquals(hasLegacyConfig({ develop_server: { ssh_enabled: true } }), true);
+  assertEquals(
+    hasLegacyConfig({ develop_server: { ssh_enabled: true } }),
+    true,
+  );
   assertEquals(
     hasLegacyConfig({ develop_server: { watch_update: true } }),
     true,
