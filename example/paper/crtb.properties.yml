@@ -1,5 +1,0 @@
-server:
-  type: paper
-  version: 1.21.10
-  build: latest
-components: {}
