@@ -3,8 +3,8 @@ import { ensureDir } from "@std/fs";
 import { stringify } from "@std/yaml";
 import { Command } from "../command.ts";
 import {
-  DEFAULT_USER_AGENT,
   createHttpClient,
+  DEFAULT_USER_AGENT,
   fetchJson,
   fetchText,
 } from "../server-jar-downloader/utils.ts";

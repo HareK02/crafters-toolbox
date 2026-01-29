@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "@std/assert";
-import { PropertiesManager } from "../property.ts";
-import { ComponentIDType } from "../component.ts";
+import { PropertiesManager } from "../scripts/property.ts";
+import { ComponentIDType, type IComponent } from "../scripts/component.ts";
 import {
   LEGACY_PROPERTIES,
   MINIMAL_PROPERTIES,
@@ -24,11 +24,11 @@ Deno.test("PropertiesManager.fromYaml - parses components", () => {
 
   assertEquals(components.length, 2);
 
-  const plugin = components.find((c) => c.name === "my-plugin");
+  const plugin = components.find((c: IComponent) => c.name === "my-plugin");
   assertEquals(plugin?.kind, ComponentIDType.PLUGINS);
   assertEquals(plugin?.source?.type, "local");
 
-  const datapack = components.find((c) => c.name === "my-datapack");
+  const datapack = components.find((c: IComponent) => c.name === "my-datapack");
   assertEquals(datapack?.kind, ComponentIDType.DATAPACKS);
   assertEquals(datapack?.source?.type, "git");
 });
@@ -47,7 +47,7 @@ Deno.test("PropertiesManager.fromYaml - parses build config", () => {
   const manager = PropertiesManager.fromYaml(PROPERTIES_WITH_BUILD);
   const components = manager.getComponentsAsArray();
 
-  const plugin = components.find((c) => c.name === "gradle-plugin");
+  const plugin = components.find((c: IComponent) => c.name === "gradle-plugin");
   assertEquals(plugin?.build?.type, "gradle");
   if (plugin?.build?.type === "gradle") {
     assertEquals(plugin.build.task, "shadowJar");
@@ -60,7 +60,7 @@ Deno.test("PropertiesManager.fromYaml - handles legacy reference format", () => 
   const manager = PropertiesManager.fromYaml(LEGACY_PROPERTIES);
   const components = manager.getComponentsAsArray();
 
-  const plugin = components.find((c) => c.name === "old-plugin");
+  const plugin = components.find((c: IComponent) => c.name === "old-plugin");
   assertEquals(plugin?.kind, ComponentIDType.PLUGINS);
   // Legacy reference should be converted to source
   assertEquals(plugin?.source?.type, "local");
@@ -115,23 +115,29 @@ components:
 
   assertEquals(components.length, 6);
   assertEquals(
-    components.filter((c) => c.kind === ComponentIDType.WORLD).length,
+    components.filter((c: IComponent) => c.kind === ComponentIDType.WORLD)
+      .length,
     1,
   );
   assertEquals(
-    components.filter((c) => c.kind === ComponentIDType.DATAPACKS).length,
+    components.filter((c: IComponent) => c.kind === ComponentIDType.DATAPACKS)
+      .length,
     2,
   );
   assertEquals(
-    components.filter((c) => c.kind === ComponentIDType.PLUGINS).length,
+    components.filter((c: IComponent) => c.kind === ComponentIDType.PLUGINS)
+      .length,
     1,
   );
   assertEquals(
-    components.filter((c) => c.kind === ComponentIDType.RESOURCEPACKS).length,
+    components.filter((c: IComponent) =>
+      c.kind === ComponentIDType.RESOURCEPACKS
+    ).length,
     1,
   );
   assertEquals(
-    components.filter((c) => c.kind === ComponentIDType.MODS).length,
+    components.filter((c: IComponent) => c.kind === ComponentIDType.MODS)
+      .length,
     1,
   );
 });

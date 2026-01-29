@@ -1,12 +1,12 @@
 import { assertEquals } from "@std/assert";
-import { DEFAULTS } from "../config/schema.ts";
+import { DEFAULTS } from "../scripts/config/schema.ts";
 import {
   getLegacyConfigWarnings,
   hasLegacyConfig,
   resolveConfig,
   resolveGameServerConfig,
   resolveSSHConfig,
-} from "../config/migrate.ts";
+} from "../scripts/config/migrate.ts";
 
 Deno.test("resolveSSHConfig - returns defaults for empty config", () => {
   const result = resolveSSHConfig({});
@@ -125,11 +125,11 @@ Deno.test("getLegacyConfigWarnings - returns warnings for legacy config", () => 
 
   assertEquals(warnings.length, 3);
   assertEquals(
-    warnings.some((w) => w.includes("ssh_enabled")),
+    warnings.some((w: string) => w.includes("ssh_enabled")),
     true,
   );
   assertEquals(
-    warnings.some((w) => w.includes("watch_update")),
+    warnings.some((w: string) => w.includes("watch_update")),
     true,
   );
 });

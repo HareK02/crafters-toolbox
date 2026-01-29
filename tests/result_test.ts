@@ -9,7 +9,7 @@ import {
   tryCatch,
   tryCatchSync,
   unwrapOr,
-} from "../types/result.ts";
+} from "../scripts/types/result.ts";
 
 Deno.test("ok - creates success result", () => {
   const result = ok(42);
@@ -62,7 +62,7 @@ Deno.test("unwrapOr - returns default on failure", () => {
 
 Deno.test("map - transforms success value", () => {
   const result = ok(10);
-  const mapped = map(result, (n) => n * 2);
+  const mapped = map(result, (n: number) => n * 2);
 
   assertEquals(isOk(mapped), true);
   if (mapped.ok) {
@@ -83,7 +83,7 @@ Deno.test("map - preserves failure", () => {
 
 Deno.test("mapErr - transforms error", () => {
   const result = err("original error");
-  const mapped = mapErr(result, (e) => `wrapped: ${e}`);
+  const mapped = mapErr(result, (e: string) => `wrapped: ${e}`);
 
   assertEquals(isErr(mapped), true);
   if (!mapped.ok) {
