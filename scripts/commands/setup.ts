@@ -35,22 +35,29 @@ const cmd: Command = {
       if (doAll || doServer) {
         const server = await loadServerProperty();
         const flavor = mapServerType(server.type);
-        const build = normalizeBuild(server.build);
-        const outputPath = join(SERVER_DIR, SERVER_JAR_NAME);
+        if (!flavor) {
+          console.error(
+            `[setup] Server type "${server.type}" is not supported for automatic jar download. ` +
+              "Provide your own server.jar or use a supported type (vanilla/paper/fabric/neoforge).",
+          );
+        } else {
+          const build = normalizeBuild(server.build);
+          const outputPath = join(SERVER_DIR, SERVER_JAR_NAME);
 
-        await Deno.mkdir(SERVER_DIR, { recursive: true });
-        console.log(
-          `[setup] Downloading ${flavor} ${server.version}${
-            build ? ` (build ${build})` : ""
-          }...`,
-        );
-        const destination = await downloadServerJar({
-          flavor,
-          version: server.version,
-          build,
-          output: outputPath,
-        });
-        console.log(`[setup] Server jar saved to ${destination}`);
+          await Deno.mkdir(SERVER_DIR, { recursive: true });
+          console.log(
+            `[setup] Downloading ${flavor} ${server.version}${
+              build ? ` (build ${build})` : ""
+            }...`,
+          );
+          const destination = await downloadServerJar({
+            flavor,
+            version: server.version,
+            build,
+            output: outputPath,
+          });
+          console.log(`[setup] Server jar saved to ${destination}`);
+        }
       }
 
       if (doAll || doDocker) {
@@ -90,15 +97,9 @@ async function loadServerProperty(): Promise<ServerProperty> {
   }
 }
 
-function mapServerType(type: ServerType): ServerFlavor {
+function mapServerType(type: ServerType): ServerFlavor | undefined {
   const normalized = type.toLowerCase() as ServerType;
-  const flavor = SERVER_TYPE_TO_FLAVOR[normalized];
-  if (!flavor) {
-    throw new Error(
-      `Server type "${type}" is not supported by the setup command.`,
-    );
-  }
-  return flavor;
+  return SERVER_TYPE_TO_FLAVOR[normalized];
 }
 
 function normalizeBuild(build?: string): string | undefined {

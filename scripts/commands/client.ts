@@ -51,10 +51,15 @@ const prepareClientEnvironment = async (
           return undefined;
         }
 
+        let buildOutput = sourceResult.path;
         if (!sourceResult.cached) {
           status.update(component.name, "building");
           try {
-            await runBuild(component, sourceResult.path, runnerImage);
+            buildOutput = await runBuild(
+              component,
+              sourceResult.path,
+              runnerImage,
+            );
           } catch (error) {
             status.fail(component.name, `build failed: ${error}`);
             return undefined;
@@ -64,16 +69,6 @@ const prepareClientEnvironment = async (
         }
 
         status.update(component.name, "artifact");
-
-        // Ensure regular build output resolution
-        let buildOutput = sourceResult.path;
-        if (!sourceResult.cached) {
-          buildOutput = await runBuild(
-            component,
-            sourceResult.path,
-            runnerImage,
-          );
-        }
 
         const { path: finalArtifactBase, config: artifactConfig } =
           resolveArtifactBase(component, buildOutput);

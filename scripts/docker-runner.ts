@@ -1,6 +1,8 @@
 import { attachToContainer } from "./terminal/docker-attach.ts";
 import { basename } from "@std/path";
 import { getLocalIdentity, getUserSpec } from "./docker-env.ts";
+import { loadConfig } from "./config.ts";
+import { resolveGameServerConfig, resolveSSHConfig } from "./config/migrate.ts";
 
 /**
  * Get the project name from the current working directory
@@ -234,19 +236,26 @@ export async function attachContainer(containerName: string): Promise<boolean> {
  * Configuration for game server container
  */
 export function getGameServerConfig(): RunContainerOptions {
+  const config = resolveGameServerConfig(loadConfig());
+  const memMax = Deno.env.get("MEM_MAX") || config.maxMemory;
+  const memMin = Deno.env.get("MEM_MIN") || config.minMemory;
+  const hostPort = Deno.env.get("GAME_PORT") || config.port;
+  const rconPort = Deno.env.get("RCON_PORT") || config.rconPort;
   return {
     entrypoint: ["start-game"],
     restart: "unless-stopped",
     network: "bridge",
     env: [
       `-e`,
-      `MEM_MAX=${Deno.env.get("MEM_MAX") || "4G"}`,
+      `MEM_MAX=${memMax}`,
+      ...(memMin ? [`-e`, `MEM_MIN=${memMin}`] : []),
     ],
     volumes: [
       `${Deno.cwd()}/server:/home/container/server`,
     ],
     ports: [
-      "25565:25565",
+      `${hostPort}:25565`,
+      `${rconPort}:25575`,
     ],
   };
 }
@@ -255,20 +264,26 @@ export function getGameServerConfig(): RunContainerOptions {
  * Configuration for SSH server container
  */
 export function getSSHServerConfig(): RunContainerOptions {
+  const resolved = resolveSSHConfig(loadConfig());
+  const sshPort = Deno.env.get("SSH_PORT") || resolved.port;
+  const passwordAuth = Deno.env.get("SSH_ENABLE_PASSWORD_AUTH") ||
+    (resolved.passwordAuth.enabled ? "true" : "false");
+  const keyAuth = Deno.env.get("SSH_ENABLE_KEY_AUTH") ||
+    (resolved.keyAuth.enabled ? "true" : "false");
+  const password = Deno.env.get("SSH_PASSWORD") ||
+    (resolved.passwordAuth.value ?? "");
   return {
     entrypoint: ["start-ssh"],
     user: "0:0", // SSH server needs root
     env: [
       `-e`,
-      `SSH_PORT=${Deno.env.get("SSH_PORT") || "2222"}`,
+      `SSH_PORT=${sshPort}`,
       `-e`,
-      `SSH_ENABLE_PASSWORD_AUTH=${
-        Deno.env.get("SSH_ENABLE_PASSWORD_AUTH") || "false"
-      }`,
+      `SSH_ENABLE_PASSWORD_AUTH=${passwordAuth}`,
       `-e`,
-      `SSH_ENABLE_KEY_AUTH=${Deno.env.get("SSH_ENABLE_KEY_AUTH") || "true"}`,
+      `SSH_ENABLE_KEY_AUTH=${keyAuth}`,
       `-e`,
-      `SSH_PASSWORD=${Deno.env.get("SSH_PASSWORD") || ""}`,
+      `SSH_PASSWORD=${password}`,
     ],
     volumes: [
       `${Deno.cwd()}/components:/home/container/components`,
@@ -276,7 +291,7 @@ export function getSSHServerConfig(): RunContainerOptions {
       `${Deno.cwd()}/.ssh:/home/container/.ssh`,
     ],
     ports: [
-      "2222:2222",
+      `${sshPort}:2222`,
     ],
   };
 }
