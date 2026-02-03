@@ -224,17 +224,19 @@ async function promptInitSettings(): Promise<InitPromptResult | null> {
   let sshPassword = DEFAULT_INIT_SETTINGS.sshPassword;
 
   if (sshEnabled) {
-    sshKeyAuth = await prompts.confirm({
+    const keyAuthResult = await prompts.confirm({
       message: "SSH 公開鍵認証を有効にしますか？",
       initialValue: DEFAULT_INIT_SETTINGS.sshKeyAuth,
     });
-    if (prompts.isCancel(sshKeyAuth)) return null;
+    if (prompts.isCancel(keyAuthResult)) return null;
+    sshKeyAuth = keyAuthResult;
 
-    sshPasswordAuth = await prompts.confirm({
+    const passwordAuthResult = await prompts.confirm({
       message: "SSH パスワード認証を有効にしますか？",
       initialValue: DEFAULT_INIT_SETTINGS.sshPasswordAuth,
     });
-    if (prompts.isCancel(sshPasswordAuth)) return null;
+    if (prompts.isCancel(passwordAuthResult)) return null;
+    sshPasswordAuth = passwordAuthResult;
 
     if (sshPasswordAuth) {
       const passwordValue = await prompts.text({

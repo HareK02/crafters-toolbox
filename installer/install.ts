@@ -260,7 +260,8 @@ async function main() {
 
     logSuccess("Installation complete!");
   } catch (error) {
-    logError(`Installation failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    logError(`Installation failed: ${message}`);
     Deno.exit(1);
   } finally {
     // Cleanup temp directory
