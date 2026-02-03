@@ -32,9 +32,12 @@ curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/main/insta
    crtb init my-server
    cd my-server
    ```
-2. Configure your server:
+2. Configure your server settings in two files:
+   - `crtb.properties.yml` - Server type, version, and components
+   - `crtb.config.yml` - Runtime settings (memory, SSH, etc.)
    ```bash
    $EDITOR crtb.properties.yml
+   $EDITOR crtb.config.yml
    ```
 3. Setup the environment (download server jar, etc.):
    ```bash
@@ -44,6 +47,55 @@ curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/main/insta
    ```bash
    crtb server start
    ```
+
+## Configuration
+
+### crtb.properties.yml
+
+Define your server type and components:
+
+```yaml
+server:
+  type: paper          # Server type: vanilla, paper, spigot, forge, fabric, neoforge
+  version: latest      # Minecraft version
+  build: latest        # Server build version
+
+components:
+  my-plugin:
+    type: plugin
+    source:
+      type: local
+      path: ./my-plugin
+    build:
+      command: ./gradlew build
+    artifact:
+      path: ./build/libs/my-plugin.jar
+```
+
+Component types: `plugin`, `mod`, `datapack`, `resourcepack`, `world`
+
+### crtb.config.yml
+
+Configure runtime settings:
+
+```yaml
+game_server:
+  max_memory: 8G
+  min_memory: 2G
+  port: 25565
+
+ssh:
+  enabled: true
+  port: 2222
+  auth:
+    keys:
+      enabled: true
+    password:
+      enabled: false
+
+runner:
+  java_base_image: eclipse-temurin:21-jdk
+```
 
 ## Dependencies
 
