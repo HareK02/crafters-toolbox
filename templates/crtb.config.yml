@@ -9,3 +9,5 @@ ssh:
     password:
       enabled: false
       value: ""
+components:
+  git_submodule: true

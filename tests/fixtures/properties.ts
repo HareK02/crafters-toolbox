@@ -60,6 +60,34 @@ components:
       pattern: '.*-all\\.jar$'
 `;
 
+export const PROPERTIES_WITH_GIT_SOURCE_PATH = `
+server:
+  type: paper
+  version: "1.21.1"
+  build: latest
+components:
+  remote-plugin:
+    type: plugin
+    source:
+      type: git
+      url: https://github.com/example/remote-plugin.git
+      path: ./vendor/plugins/remote-plugin
+`;
+
+export const PROPERTIES_WITH_GIT_SUBMODULE_FLAG = `
+server:
+  type: paper
+  version: "1.21.1"
+  build: latest
+components:
+  submodule-plugin:
+    type: plugin
+    source:
+      type: git
+      url: https://github.com/example/submodule-plugin.git
+      submodule: false
+`;
+
 export const LEGACY_PROPERTIES = `
 server:
   type: paper

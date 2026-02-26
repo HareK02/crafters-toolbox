@@ -6,6 +6,8 @@ import {
   MINIMAL_PROPERTIES,
   PROPERTIES_WITH_BUILD,
   PROPERTIES_WITH_COMPONENTS,
+  PROPERTIES_WITH_GIT_SOURCE_PATH,
+  PROPERTIES_WITH_GIT_SUBMODULE_FLAG,
   PROPERTIES_WITH_WORLD,
 } from "./fixtures/properties.ts";
 
@@ -54,6 +56,30 @@ Deno.test("PropertiesManager.fromYaml - parses build config", () => {
   }
   assertEquals(plugin?.artifact?.type, "jar");
   assertEquals(plugin?.artifact?.pattern, ".*-all\\.jar$");
+});
+
+Deno.test("PropertiesManager.fromYaml - maps git source path to component path", () => {
+  const manager = PropertiesManager.fromYaml(PROPERTIES_WITH_GIT_SOURCE_PATH);
+  const components = manager.getComponentsAsArray();
+
+  const plugin = components.find((c: IComponent) =>
+    c.name === "remote-plugin"
+  );
+  assertEquals(plugin?.source?.type, "git");
+  assertEquals(plugin?.path, "./vendor/plugins/remote-plugin");
+});
+
+Deno.test("PropertiesManager.fromYaml - parses git submodule flag", () => {
+  const manager = PropertiesManager.fromYaml(PROPERTIES_WITH_GIT_SUBMODULE_FLAG);
+  const components = manager.getComponentsAsArray();
+
+  const plugin = components.find((c: IComponent) =>
+    c.name === "submodule-plugin"
+  );
+  assertEquals(plugin?.source?.type, "git");
+  if (plugin?.source?.type === "git") {
+    assertEquals(plugin.source.submodule, false);
+  }
 });
 
 Deno.test("PropertiesManager.fromYaml - handles legacy reference format", () => {

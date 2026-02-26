@@ -70,3 +70,10 @@ export function getGameServerMemory(config: CRTBConfigSchema): {
 export function getSSHConfig(config: CRTBConfigSchema): ResolvedSSHConfig {
   return resolveSSHConfig(config);
 }
+
+/**
+ * git submodule を使うかのデフォルト値を取得
+ */
+export function getGitSubmoduleDefault(config: CRTBConfigSchema): boolean {
+  return config.components?.git_submodule ?? DEFAULTS.GIT_SUBMODULE_DEFAULT;
+}

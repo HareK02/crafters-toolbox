@@ -36,6 +36,9 @@ export const DEFAULTS = {
   SSH_ENABLED: true,
   SSH_PASSWORD_AUTH: false,
   SSH_KEY_AUTH: true,
+
+  // Components
+  GIT_SUBMODULE_DEFAULT: true,
 } as const;
 
 /**
@@ -88,6 +91,13 @@ export type SSHConfig = {
 };
 
 /**
+ * コンポーネント設定型
+ */
+export type ComponentsConfig = {
+  git_submodule?: boolean;
+};
+
+/**
  * レガシーサーバー設定型（下位互換性）
  */
 export type LegacyDevelopServerConfig = {
@@ -102,6 +112,7 @@ export type CRTBConfigSchema = {
   runner?: RunnerConfig;
   game_server?: GameServerConfig;
   ssh?: SSHConfig;
+  components?: ComponentsConfig;
   // レガシーフォールバック
   ssh_enabled?: boolean;
   develop_server?: LegacyDevelopServerConfig;

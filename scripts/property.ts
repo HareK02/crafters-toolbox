@@ -84,6 +84,7 @@ export class PropertiesManager {
   }
   static fromYaml(yaml: string): PropertiesManager {
     try {
+      type RawSourceConfig = SourceConfig & { path?: string };
       const rawProperty = parse(yaml) as {
         server: Properties["server"];
         components?: Record<
@@ -92,7 +93,7 @@ export class PropertiesManager {
             type: string;
             path?: string;
             reference?: LegacyReference;
-            source?: SourceConfig;
+            source?: RawSourceConfig;
             build?: BuildConfig;
             artifact?: ArtifactConfig;
           }
@@ -122,19 +123,55 @@ export class PropertiesManager {
         return undefined;
       };
 
+      const normalizeSource = (
+        source?: RawSourceConfig,
+      ): SourceConfig | undefined => {
+        if (!source) return undefined;
+        if (source.type === "local") {
+          return { type: "local", path: source.path };
+        }
+        if (source.type === "http") {
+          return { type: "http", url: source.url };
+        }
+        if (source.type === "git") {
+          const normalized: {
+            type: "git";
+            url: string;
+            branch?: string;
+            commit?: string;
+            submodule?: boolean;
+          } = {
+            type: "git",
+            url: source.url,
+          };
+          if (source.branch) normalized.branch = source.branch;
+          if (source.commit) normalized.commit = source.commit;
+          if (source.submodule !== undefined) {
+            normalized.submodule = source.submodule;
+          }
+          return normalized;
+        }
+        return undefined;
+      };
+
       /**
        * 生のコンポーネントデータからオプションを抽出
        */
       const extractOptions = (raw: {
         path?: string;
         reference?: LegacyReference;
-        source?: SourceConfig;
+        source?: RawSourceConfig;
         build?: BuildConfig;
         artifact?: ArtifactConfig;
       }) => {
-        const source = raw.source ?? convertLegacyReference(raw.reference);
+        const sourceRaw = raw.source ?? convertLegacyReference(raw.reference);
+        const source = normalizeSource(sourceRaw);
+        const sourcePath = raw.source?.type === "git" &&
+            typeof raw.source.path === "string"
+          ? raw.source.path
+          : undefined;
         return {
-          path: raw.path,
+          path: raw.path ?? sourcePath,
           source,
           build: raw.build,
           artifact: raw.artifact,

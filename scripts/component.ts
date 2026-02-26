@@ -67,7 +67,13 @@ export const ComponentIDString = {
 export type SourceConfig =
   | { type: "local"; path: string }
   | { type: "http"; url: string }
-  | { type: "git"; url: string; branch?: string; commit?: string };
+  | {
+    type: "git";
+    url: string;
+    branch?: string;
+    commit?: string;
+    submodule?: boolean;
+  };
 
 export type BuildConfig =
   | { type?: "none" }
