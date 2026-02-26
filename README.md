@@ -22,7 +22,7 @@ Mods and Datapacks.
 To install Crafter's Toolbox, run the following command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HareK02/crafters-toolbox/master/install.sh | bash
 ```
 
 ## Quick Start
