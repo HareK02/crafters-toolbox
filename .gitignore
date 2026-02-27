@@ -5,7 +5,6 @@
 
 .cache
 server
-components
 
 docker/result
 
