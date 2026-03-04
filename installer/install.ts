@@ -103,58 +103,25 @@ async function buildDockerImage(skipBuild = false): Promise<void> {
   if (!hasDocker) {
     logWarn("Docker not found. Skipping Docker image build.");
     logWarn(
-      "You can build the image later by running: nix build ./docker#dockerImage && docker load < result",
+      "You can build the image later by running: docker build ./docker -t crafters-toolbox:latest",
     );
     return;
   }
 
   logInfo("Building Docker image (this may take a few minutes)...");
 
-  // Check if we should use Nix-based build
-  const hasNix = await checkCommand("nix");
+  const command = new Deno.Command("docker", {
+    args: ["build", "./docker", "-t", "crafters-toolbox:latest"],
+    stdout: "inherit",
+    stderr: "inherit",
+  });
 
-  if (hasNix) {
-    logInfo("Using Nix flake to build Docker image...");
-    const command = new Deno.Command("nix", {
-      args: [
-        "build",
-        "./docker#dockerImage",
-        "--out-link",
-        "docker-image-result",
-      ],
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-
-    const { success } = await command.output();
-    if (success) {
-      logInfo("Loading Docker image from Nix build...");
-      const loadCommand = new Deno.Command("docker", {
-        args: ["load", "-i", "docker-image-result"],
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      const loadResult = await loadCommand.output();
-
-      // Clean up result symlink
-      try {
-        await Deno.remove("docker-image-result");
-      } catch {
-        // Ignore cleanup errors
-      }
-
-      if (loadResult.success) {
-        logSuccess("Docker image built and loaded successfully via Nix");
-        return;
-      }
-    }
-    logWarn(
-      "Nix build failed. You can build it later manually with: nix build ./docker#dockerImage && docker load < result",
-    );
+  const { success } = await command.output();
+  if (success) {
+    logSuccess("Docker image built successfully");
   } else {
-    logWarn("Nix not found. Docker image build requires Nix.");
     logWarn(
-      "Install Nix from https://nixos.org/download.html or build manually later.",
+      "Docker build failed. You can build it later manually with: docker build ./docker -t crafters-toolbox:latest",
     );
   }
 }
