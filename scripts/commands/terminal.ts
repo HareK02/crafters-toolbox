@@ -6,6 +6,7 @@ import { attachContainer, getContainerName } from "../docker-runner.ts";
 const cmd: Command = {
   name: "terminal",
   description: "Attach to a running container console (default: game)",
+  hidden: true,
   handler: async (args: string[]) => {
     if (!(await dockerTest())) return;
 

@@ -22,6 +22,7 @@ const SERVER_TYPE_TO_FLAVOR: Partial<Record<ServerType, ServerFlavor>> = {
 const cmd: Command = {
   name: "setup",
   description: "Setup the environment",
+  hidden: true,
   handler: async (args: string[]) => {
     try {
       const doServer = args.includes("--server");

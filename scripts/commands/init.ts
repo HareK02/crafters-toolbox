@@ -45,6 +45,7 @@ const PRE_RELEASE_PATTERN = /-(?:pre|rc|beta|alpha)/i;
 const cmd: Command = {
   name: "init",
   description: "Initialize a new Crafters Toolbox project",
+  hidden: true,
   handler: async (args: string[]) => {
     const noPrompt = args.includes("--no-prompt");
     const targetArg = args.find((arg) => !arg.startsWith("--"));

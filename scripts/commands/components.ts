@@ -290,17 +290,6 @@ const componentsCommand: Command = {
       handler: renderComponentInventory,
     },
     {
-      name: "import",
-      description:
-        "Register locally discovered components into crtb.properties.yml",
-      handler: async (args: string[]) => {
-        await runComponentsImport(args);
-      },
-      interactiveHandler: async () => {
-        await runComponentsImportInteractive();
-      },
-    },
-    {
       name: "update",
       description:
         "Update components (optionally pass component names to limit scope)",
@@ -318,6 +307,17 @@ const componentsCommand: Command = {
           await runComponentsUpdate([], selection);
           console.log("");
         }
+      },
+    },
+    {
+      name: "import",
+      description:
+        "Register locally discovered components into crtb.properties.yml",
+      handler: async (args: string[]) => {
+        await runComponentsImport(args);
+      },
+      interactiveHandler: async () => {
+        await runComponentsImportInteractive();
       },
     },
     {

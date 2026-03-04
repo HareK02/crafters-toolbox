@@ -1,6 +1,5 @@
 import clientCmd from "./commands/client.ts";
 import componentCmd from "./commands/components.ts";
-import helpCmd from "./commands/help.ts";
 import initCmd from "./commands/init.ts";
 import serverCmd from "./commands/server.ts";
 import setupCmd from "./commands/setup.ts";
@@ -13,15 +12,16 @@ export interface Command {
   subcommands?: Command[];
   handler: (args: string[]) => Promise<void>;
   interactiveHandler?: () => Promise<void>;
+  /** インタラクティブメニューのメインページに表示しない */
+  hidden?: boolean;
 }
 
 export const COMMANDS: Command[] = [
-  initCmd,
-  setupCmd,
+  componentCmd,
   serverCmd,
   clientCmd,
-  componentCmd,
   sshCmd,
+  initCmd,
+  setupCmd,
   terminalCmd,
-  helpCmd,
 ];

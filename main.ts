@@ -3,9 +3,11 @@ const VERSION = "0.0.1";
 import { isCancel, log, select } from "@clack/prompts";
 
 import { Command, COMMANDS } from "./scripts/command.ts";
+import { showCommandHelp, showGlobalHelp } from "./scripts/commands/help.ts";
 
 const EXIT_OPTION = "__exit";
 const BACK_OPTION = "__back";
+const OTHERS_OPTION = "__others";
 
 const renderBanner = () => {
   console.log(
@@ -59,24 +61,45 @@ const promptForSubcommand = async (command: Command) => {
   return subcommand;
 };
 
+const runInteractiveCommand = async (command: Command) => {
+  const subcommand = await promptForSubcommand(command);
+  if (subcommand === null) return;
+  const chosen = subcommand ?? command;
+  try {
+    if (chosen.interactiveHandler) {
+      await chosen.interactiveHandler();
+    } else {
+      await chosen.handler([]);
+    }
+  } catch (error) {
+    log.error(`"${chosen.name}" の実行中にエラーが発生しました: ${error}`);
+  }
+};
+
 const runInteractiveMenu = async () => {
   renderBanner();
 
-  // Initialize status bar
-  // Initialize status bar
-  // initStatusBar();
-  // drawStatusBar(`Crafter's Toolbox v${VERSION} | Press Ctrl+C to exit`);
+  const mainCommands = COMMANDS.filter((cmd) => !cmd.hidden);
+  const hiddenCommands = COMMANDS.filter((cmd) => cmd.hidden);
+  const hasOthers = hiddenCommands.length > 0;
 
   let exitRequested = false;
   while (!exitRequested) {
     const commandChoice = await select({
       message: "実行するコマンドを選択してください",
       options: [
-        ...COMMANDS.map((cmd) => ({
+        ...mainCommands.map((cmd) => ({
           value: cmd.name,
           label: cmd.name,
           hint: cmd.description,
         })),
+        ...(hasOthers
+          ? [{
+            value: OTHERS_OPTION,
+            label: "others...",
+            hint: hiddenCommands.map((c) => c.name).join(", "),
+          }]
+          : []),
         { value: EXIT_OPTION, label: "終了", hint: "CLI を終了します" },
       ],
     });
@@ -86,50 +109,50 @@ const runInteractiveMenu = async () => {
       break;
     }
 
-    const command = COMMANDS.find((cmd) => cmd.name === commandChoice);
+    if (commandChoice === OTHERS_OPTION) {
+      const otherChoice = await select({
+        message: "others",
+        options: [
+          ...hiddenCommands.map((cmd) => ({
+            value: cmd.name,
+            label: cmd.name,
+            hint: cmd.description,
+          })),
+          { value: BACK_OPTION, label: "戻る", hint: "メインメニューに戻ります" },
+        ],
+      });
+      if (isCancel(otherChoice) || otherChoice === BACK_OPTION) continue;
+      const command = hiddenCommands.find((cmd) => cmd.name === otherChoice);
+      if (command) await runInteractiveCommand(command);
+      continue;
+    }
+
+    const command = mainCommands.find((cmd) => cmd.name === commandChoice);
     if (!command) {
       log.error(`Command "${commandChoice}" not found.`);
       continue;
     }
-
-    log.info(`${command.name}: ${command.description}`);
-
-    const subcommand = await promptForSubcommand(command);
-    if (subcommand === null) {
-      // User canceled subcommand selection
-      continue;
-    }
-    const chosenCommand = subcommand ?? command;
-
-    try {
-      if (chosenCommand.interactiveHandler) {
-        await chosenCommand.interactiveHandler();
-      } else {
-        await chosenCommand.handler([]);
-      }
-    } catch (error) {
-      log.error(
-        `"${chosenCommand.name}" の実行中にエラーが発生しました: ${error}`,
-      );
-    }
-    // exitRequested = true;
+    await runInteractiveCommand(command);
   }
-
-  // Clean up status bar on exit
-  // Clean up status bar on exit
-  // clearStatusBar();
 };
 
 const args = Deno.args;
 
 if (!args[0]) {
   await runInteractiveMenu();
+} else if (args[0] === "--help" || args[0] === "-h") {
+  showGlobalHelp();
 } else {
   const commandName = args[0];
   const command = COMMANDS.find((cmd) => cmd.name === commandName);
   if (command) {
-    await runCommand(command, args.slice(1));
+    const restArgs = args.slice(1);
+    if (restArgs.includes("--help") || restArgs.includes("-h")) {
+      showCommandHelp(command);
+    } else {
+      await runCommand(command, restArgs);
+    }
   } else {
-    console.log(`Command "${commandName}" not found.`);
+    console.log(`Command "${commandName}" not found. Run 'crtb --help' for usage.`);
   }
 }

@@ -225,11 +225,29 @@ export const applyComponents = async (
     return;
   }
 
-  const components = properties
+  const allComponents = properties
     .getComponentsAsArray()
     .filter((component) =>
       selectedNames ? selectedNames.has(component.name) : true
     );
+
+  const components = options?.pull
+    ? allComponents.filter((c) =>
+      c.source?.type === "http" || c.source?.type === "git"
+    )
+    : allComponents;
+
+  if (options?.pull) {
+    const skipped = allComponents.filter((c) =>
+      c.source?.type !== "http" && c.source?.type !== "git"
+    );
+    if (skipped.length > 0) {
+      info(
+        `Skipping local-only components: ${skipped.map((c) => c.name).join(", ")}`,
+      );
+    }
+  }
+
   if (components.length === 0) {
     info("No components matched the selected filters.");
     return;
