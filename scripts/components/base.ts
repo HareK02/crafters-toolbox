@@ -4,6 +4,7 @@ import {
   ComponentIDString,
   ComponentIDType,
   IComponent,
+  ModTarget,
   SourceConfig,
 } from "../component.ts";
 
@@ -15,6 +16,7 @@ export interface ComponentOptions {
   source?: SourceConfig;
   build?: BuildConfig;
   artifact?: ArtifactConfig;
+  target?: ModTarget;
 }
 
 /**
@@ -28,6 +30,7 @@ export class Component implements IComponent {
   source?: SourceConfig;
   build?: BuildConfig;
   artifact?: ArtifactConfig;
+  target?: ModTarget;
 
   constructor(
     kind: ComponentIDType,
@@ -40,6 +43,7 @@ export class Component implements IComponent {
     this.source = options?.source;
     this.build = options?.build;
     this.artifact = options?.artifact;
+    this.target = options?.target;
   }
 
   toIDString(): ComponentIDString {

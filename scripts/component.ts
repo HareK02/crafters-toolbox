@@ -64,6 +64,8 @@ export const ComponentIDString = {
   },
 };
 
+export type ModTarget = "server" | "client" | "both";
+
 export type SourceConfig =
   | { type: "local"; path: string }
   | { type: "http"; url: string }
@@ -95,6 +97,8 @@ export interface IComponent {
   source?: SourceConfig;
   build?: BuildConfig;
   artifact?: ArtifactConfig;
+  /** mod のみ有効。デプロイ先を指定する。デフォルト: "both" */
+  target?: ModTarget;
 
   toIDString(): ComponentIDString;
 }

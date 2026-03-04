@@ -11,6 +11,7 @@ import {
   BuildConfig,
   ComponentIDType,
   IComponent,
+  ModTarget,
   SourceConfig,
 } from "./component.ts";
 import { parse, stringify } from "@std/yaml";
@@ -96,6 +97,7 @@ export class PropertiesManager {
             source?: RawSourceConfig;
             build?: BuildConfig;
             artifact?: ArtifactConfig;
+            target?: ModTarget;
           }
         >;
         exports?: Properties["exports"];
@@ -163,6 +165,7 @@ export class PropertiesManager {
         source?: RawSourceConfig;
         build?: BuildConfig;
         artifact?: ArtifactConfig;
+        target?: ModTarget;
       }) => {
         const sourceRaw = raw.source ?? convertLegacyReference(raw.reference);
         const source = normalizeSource(sourceRaw);
@@ -175,6 +178,7 @@ export class PropertiesManager {
           source,
           build: raw.build,
           artifact: raw.artifact,
+          target: raw.target,
         };
       };
 
@@ -254,6 +258,7 @@ export class PropertiesManager {
       if (c.source) obj.source = c.source;
       if (c.build) obj.build = c.build;
       if (c.artifact) obj.artifact = c.artifact;
+      if (c.kind === ComponentIDType.MODS && c.target) obj.target = c.target;
 
       return obj;
     };

@@ -3,6 +3,7 @@
  */
 import { parse } from "@std/yaml";
 import {
+  ClientConfig,
   CRTBConfigSchema,
   DEFAULTS,
   ResolvedSSHConfig,
@@ -14,7 +15,7 @@ import {
 } from "./config/migrate.ts";
 
 // 下位互換性のため再エクスポート
-export type { CRTBConfigSchema as CRTBConfig, ResolvedSSHConfig };
+export type { ClientConfig, CRTBConfigSchema as CRTBConfig, ResolvedSSHConfig };
 export { DEFAULTS };
 
 /**
@@ -76,4 +77,27 @@ export function getSSHConfig(config: CRTBConfigSchema): ResolvedSSHConfig {
  */
 export function getGitSubmoduleDefault(config: CRTBConfigSchema): boolean {
   return config.components?.git_submodule ?? DEFAULTS.GIT_SUBMODULE_DEFAULT;
+}
+
+/**
+ * ~ を展開してパスを解決する
+ */
+function expandHome(path: string): string {
+  if (path.startsWith("~/")) {
+    return `${Deno.env.get("HOME") ?? ""}${path.slice(1)}`;
+  }
+  return path;
+}
+
+/**
+ * クライアント設定を取得
+ */
+export function getClientConfig(config: CRTBConfigSchema): {
+  modsDir: string;
+  launchCommand?: string;
+} {
+  return {
+    modsDir: expandHome(config.client?.mods_dir ?? ".minecraft/mods"),
+    launchCommand: config.client?.launch_command,
+  };
 }

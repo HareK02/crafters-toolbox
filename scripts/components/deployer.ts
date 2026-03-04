@@ -4,7 +4,7 @@
 import { copy } from "@std/fs";
 import { basename, join } from "@std/path";
 import { ComponentIDType, IComponent } from "../component.ts";
-import { getJavaImage, loadConfig } from "../config.ts";
+import { getClientConfig, getJavaImage, loadConfig } from "../config.ts";
 import { DeploymentManifest } from "../deployment/manifest.ts";
 import { PropertiesManager, ServerType } from "../property.ts";
 import { pickArtifactFile, resolveArtifactBase } from "./artifact-resolver.ts";
@@ -257,13 +257,15 @@ export const applyComponents = async (
   setCurrentStatusManager(status);
   const config = loadConfig();
   const runnerImage = getJavaImage(config);
+  const clientConfig = getClientConfig(config);
 
   const levelName = await resolveLevelName(GAME_SERVER_ROOT);
   const worldPath = resolveWorldPath(serverType, levelName);
   const datapacksDir = join(worldPath, "datapacks");
   const resourcepacksDir = join(GAME_SERVER_ROOT, "resourcepacks");
   const pluginsDir = join(GAME_SERVER_ROOT, "plugins");
-  const modsDir = join(GAME_SERVER_ROOT, "mods");
+  const serverModsDir = join(GAME_SERVER_ROOT, "mods");
+  const clientModsDir = clientConfig.modsDir;
   const worldRoot = resolveWorldRoot(serverType);
   const manifest = await DeploymentManifest.load(GAME_SERVER_ROOT);
   const manifestLock = new AsyncLock();
@@ -531,7 +533,11 @@ export const applyComponents = async (
             break;
           }
           case ComponentIDType.MODS: {
-            if (!deployConfig.supportsMods) {
+            const modTarget = component.target ?? "both";
+            const deployToServer = modTarget === "server" || modTarget === "both";
+            const deployToClient = modTarget === "client" || modTarget === "both";
+
+            if (deployToServer && !deployConfig.supportsMods) {
               status.fail(component.name, `unsupported on ${serverType}`);
               return {
                 name: component.name,
@@ -539,41 +545,53 @@ export const applyComponents = async (
                 message: `Unsupported on ${serverType}`,
               };
             }
-            if (artifact.unzip) {
-              if (!isZipPath(finalArtifactPath, artifact.type)) {
-                status.fail(component.name, "mod artifact is not a zip");
-                return {
-                  name: component.name,
-                  success: false,
-                  message: "Mod artifact is not a zip",
-                };
+
+            const deployModTo = async (destDir: string): Promise<boolean> => {
+              await Deno.mkdir(destDir, { recursive: true });
+              if (artifact.unzip) {
+                if (!isZipPath(finalArtifactPath, artifact.type)) {
+                  return false;
+                }
+                const targetDir = join(destDir, artifact.target ?? component.name);
+                await extractZip(finalArtifactPath, targetDir);
+                deployedPaths.push(await resolveAbsolutePath(targetDir));
+              } else {
+                const dest = await deployEntry(finalArtifactPath, destDir, component.name);
+                if (!dest) return false;
+                deployedPaths.push(await resolveAbsolutePath(dest));
               }
-              const targetDir = join(
-                modsDir,
-                artifact.target ?? component.name,
-              );
-              await extractZip(finalArtifactPath, targetDir);
-              deployedPaths.push(await resolveAbsolutePath(targetDir));
-              status.succeed(component.name, "deployed mod (unzipped)");
-              deploymentSucceeded = true;
-            } else {
-              const dest = await deployEntry(
-                finalArtifactPath,
-                modsDir,
-                component.name,
-              );
-              if (!dest) {
-                status.fail(component.name, "failed to deploy mod");
-                return {
-                  name: component.name,
-                  success: false,
-                  message: "Failed to deploy mod",
-                };
-              }
-              deployedPaths.push(await resolveAbsolutePath(dest));
-              status.succeed(component.name, "deployed mod");
-              deploymentSucceeded = true;
+              return true;
+            };
+
+            if (artifact.unzip && !isZipPath(finalArtifactPath, artifact.type)) {
+              status.fail(component.name, "mod artifact is not a zip");
+              return {
+                name: component.name,
+                success: false,
+                message: "Mod artifact is not a zip",
+              };
             }
+
+            if (deployToServer) {
+              const ok = await deployModTo(serverModsDir);
+              if (!ok) {
+                status.fail(component.name, "failed to deploy mod to server");
+                return { name: component.name, success: false, message: "Failed to deploy mod to server" };
+              }
+            }
+            if (deployToClient) {
+              const ok = await deployModTo(clientModsDir);
+              if (!ok) {
+                status.fail(component.name, "failed to deploy mod to client");
+                return { name: component.name, success: false, message: "Failed to deploy mod to client" };
+              }
+            }
+
+            const label = deployToServer && deployToClient
+              ? "server + client"
+              : deployToServer ? "server" : "client";
+            status.succeed(component.name, `deployed mod (${label})${artifact.unzip ? " (unzipped)" : ""}`);
+            deploymentSucceeded = true;
             break;
           }
           default:

@@ -106,6 +106,16 @@ export type LegacyDevelopServerConfig = {
 };
 
 /**
+ * クライアント設定型
+ */
+export type ClientConfig = {
+  /** mod のデプロイ先ディレクトリ。~ 展開あり。デフォルト: .minecraft/mods */
+  mods_dir?: string;
+  /** client start で実行するコマンド */
+  launch_command?: string;
+};
+
+/**
  * CRTB設定ファイルの完全な型
  */
 export type CRTBConfigSchema = {
@@ -113,6 +123,7 @@ export type CRTBConfigSchema = {
   game_server?: GameServerConfig;
   ssh?: SSHConfig;
   components?: ComponentsConfig;
+  client?: ClientConfig;
   // レガシーフォールバック
   ssh_enabled?: boolean;
   develop_server?: LegacyDevelopServerConfig;
