@@ -31,6 +31,7 @@ export const DEFAULTS = {
   CONTAINER_PREFIX: "ctbx",
   GAME_SERVICE: "game-server",
   SSH_SERVICE: "ssh-server",
+  GAME_NETWORK: "bridge",
 
   // SSH
   SSH_ENABLED: true,
@@ -56,6 +57,7 @@ export type GameServerConfig = {
   min_memory?: string;
   port?: string;
   rcon_port?: string;
+  network?: string;
 };
 
 /**
@@ -152,6 +154,7 @@ export type ResolvedGameServerConfig = {
   minMemory?: string;
   port: string;
   rconPort: string;
+  network: string;
 };
 
 /**

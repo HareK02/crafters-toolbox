@@ -244,7 +244,7 @@ export function getGameServerConfig(): RunContainerOptions {
   return {
     entrypoint: ["start-game"],
     restart: "unless-stopped",
-    network: "bridge",
+    network: config.network,
     env: [
       `-e`,
       `MEM_MAX=${memMax}`,

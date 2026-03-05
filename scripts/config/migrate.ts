@@ -82,6 +82,7 @@ export function resolveGameServerConfig(
     minMemory: config.game_server?.min_memory,
     port: config.game_server?.port ?? DEFAULTS.GAME_PORT,
     rconPort: config.game_server?.rcon_port ?? DEFAULTS.RCON_PORT,
+    network: config.game_server?.network ?? DEFAULTS.GAME_NETWORK,
   };
 }
 
