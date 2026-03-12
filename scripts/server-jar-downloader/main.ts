@@ -108,6 +108,7 @@ function castFlavor(input: string): ServerFlavor {
   if (
     value === "vanilla" ||
     value === "paper" ||
+    value === "folia" ||
     value === "fabric" ||
     value === "neoforge"
   ) {
@@ -122,7 +123,7 @@ function printUsage(message?: string) {
     `Usage: deno run -A scripts/server-jar-downloader/main.ts --type <flavor> --version <minecraft version> [options]
 
 Options:
-  -t, --type <vanilla|paper|fabric|neoforge>
+  -t, --type <vanilla|paper|folia|fabric|neoforge>
   -v, --version <minecraft version>
   -b, --build <build number or loader/build id>
       --loader <fabric loader version> (alias of --build for Fabric)

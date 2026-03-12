@@ -14,6 +14,7 @@ const SERVER_JAR_NAME = "server.jar";
 const SERVER_TYPE_TO_FLAVOR: Partial<Record<ServerType, ServerFlavor>> = {
   vanilla: "vanilla",
   paper: "paper",
+  folia: "folia",
   fabric: "fabric",
   neoforge: "neoforge",
 };
@@ -29,7 +30,7 @@ const cmd: Command = {
       if (!flavor) {
         console.error(
           `[setup] Server type "${server.type}" is not supported for automatic jar download. ` +
-            "Provide your own server.jar or use a supported type (vanilla/paper/fabric/neoforge).",
+            "Provide your own server.jar or use a supported type (vanilla/paper/folia/fabric/neoforge).",
         );
         return;
       }

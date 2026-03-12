@@ -56,6 +56,11 @@ export const DEPLOY_CONFIGS: Record<ServerType, DeployConfig> = {
     supportsMods: false,
     supportsPlugins: true,
   },
+  folia: {
+    worldContainer: "worlds",
+    supportsMods: false,
+    supportsPlugins: true,
+  },
   spigot: {
     worldContainer: "worlds",
     supportsMods: false,

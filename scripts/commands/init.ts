@@ -26,7 +26,7 @@ const DEFAULT_INIT_SETTINGS = {
   serverBuild: "latest",
   maxMemory: "8G",
   minMemory: "2G",
-  sshEnabled: true,
+  sshEnabled: false,
   sshKeyAuth: true,
   sshPasswordAuth: false,
   sshPassword: "",
@@ -171,6 +171,7 @@ async function promptInitSettings(): Promise<InitPromptResult | null> {
     options: [
       { value: "vanilla", label: "vanilla" },
       { value: "paper", label: "paper" },
+      { value: "folia", label: "folia" },
       { value: "spigot", label: "spigot" },
       { value: "forge", label: "forge" },
       { value: "fabric", label: "fabric" },

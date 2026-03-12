@@ -6,7 +6,8 @@ import {
 } from "../types.ts";
 import { fetchJson } from "../utils.ts";
 
-const PAPER_API_BASE = "https://api.papermc.io/v2/projects/paper";
+const PAPERMC_API_BASE = "https://api.papermc.io/v2/projects";
+const PAPER_API_BASE = `${PAPERMC_API_BASE}/paper`;
 const PAPER_PROJECT_ENDPOINT = PAPER_API_BASE;
 const PRE_RELEASE_PATTERN = /-(?:pre|rc|beta|alpha)/i;
 
@@ -136,4 +137,105 @@ function classifyPaperChannel(channel: string | undefined): ReleaseChannel {
       normalized === "recommended"
     ? "stable"
     : "beta";
+}
+
+export async function getLatestPaperMCProjectVersion(
+  projectId: string,
+  channel: ReleaseChannel,
+  client: HttpClient,
+): Promise<string> {
+  const project = await fetchJson<PaperProjectMeta>(
+    client,
+    `${PAPERMC_API_BASE}/${projectId}`,
+  );
+  if (!project.versions.length) {
+    throw new Error(`${projectId} API did not return any versions.`);
+  }
+  const filtered = project.versions.filter((version) => {
+    const isPreRelease = PRE_RELEASE_PATTERN.test(version);
+    return channel === "beta" ? isPreRelease : !isPreRelease;
+  });
+  const result = (filtered.length ? filtered : project.versions).at(-1);
+  if (!result) {
+    throw new Error(`Unable to determine the latest ${projectId} version.`);
+  }
+  return result;
+}
+
+export async function resolvePaperMCProject(
+  projectId: string,
+  version: string,
+  buildSpec: BuildSpecifier,
+  client: HttpClient,
+): Promise<DownloadResolution> {
+  const apiBase = `${PAPERMC_API_BASE}/${projectId}`;
+  const versionMeta = await fetchJson<PaperVersionMeta>(
+    client,
+    `${apiBase}/versions/${version}`,
+  );
+  const builds = versionMeta.builds;
+  if (!builds.length) {
+    throw new Error(`${projectId} ${version} does not have any builds yet.`);
+  }
+
+  const { buildNumber, buildMeta } = await selectBuildForProject(
+    apiBase,
+    version,
+    builds,
+    buildSpec,
+    client,
+  );
+  const artifact = buildMeta.downloads.application;
+  if (!artifact) {
+    throw new Error(
+      `${projectId} build ${version}#${buildNumber} is missing the application jar entry.`,
+    );
+  }
+
+  return {
+    url: `${apiBase}/versions/${version}/builds/${buildNumber}/downloads/${artifact.name}`,
+    fileName: artifact.name,
+    checksum: { algorithm: "SHA-256", value: artifact.sha256 },
+  };
+}
+
+async function selectBuildForProject(
+  apiBase: string,
+  version: string,
+  builds: number[],
+  spec: BuildSpecifier,
+  client: HttpClient,
+): Promise<{ buildNumber: number; buildMeta: PaperBuildMeta }> {
+  if (spec.kind === "exact") {
+    const buildNumber = Number(spec.value);
+    if (!Number.isInteger(buildNumber)) {
+      throw new Error(`Build must be a number: received ${spec.value}`);
+    }
+    if (!builds.includes(buildNumber)) {
+      throw new Error(`${version} does not have build ${spec.value}.`);
+    }
+    const buildMeta = await fetchJson<PaperBuildMeta>(
+      client,
+      `${apiBase}/versions/${version}/builds/${buildNumber}`,
+    );
+    return { buildNumber, buildMeta };
+  }
+
+  const ordered = [...builds].sort((a, b) => a - b).reverse();
+  let fallback: { buildNumber: number; buildMeta: PaperBuildMeta } | undefined;
+  for (const buildNumber of ordered) {
+    const buildMeta = await fetchJson<PaperBuildMeta>(
+      client,
+      `${apiBase}/versions/${version}/builds/${buildNumber}`,
+    );
+    const channel = classifyPaperChannel(buildMeta.channel);
+    if (channel === spec.channel) {
+      return { buildNumber, buildMeta };
+    }
+    if (!fallback) fallback = { buildNumber, buildMeta };
+  }
+  if (!fallback) {
+    throw new Error(`${version} does not have any builds to download.`);
+  }
+  return fallback;
 }

@@ -33,6 +33,7 @@ type VersionString =
 export type ServerType =
   | "vanilla"
   | "paper"
+  | "folia"
   | "spigot"
   | "forge"
   | "fabric"

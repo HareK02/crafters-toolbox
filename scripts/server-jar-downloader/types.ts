@@ -1,4 +1,4 @@
-export type ServerFlavor = "vanilla" | "paper" | "fabric" | "neoforge";
+export type ServerFlavor = "vanilla" | "paper" | "folia" | "fabric" | "neoforge";
 
 export type ReleaseChannel = "stable" | "beta";
 

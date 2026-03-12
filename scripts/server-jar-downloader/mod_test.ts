@@ -3,7 +3,7 @@ import { __internals, downloadServerJar } from "./mod.ts";
 import type { HttpClient } from "./types.ts";
 import { join } from "@std/path";
 
-const { resolveVanilla, resolvePaper, resolveFabric, resolveNeoForge } =
+const { resolveVanilla, resolvePaper, resolveFolia, resolveFabric, resolveNeoForge } =
   __internals;
 
 Deno.test("resolveVanilla picks the correct server download", async () => {
@@ -98,6 +98,37 @@ Deno.test("resolvePaper honors latest-beta channel requests", async () => {
   );
   assertEquals(resolution.fileName, "paper-1.21.1-11.jar");
 });
+
+Deno.test(
+  "resolveFolia selects the latest build when none provided",
+  async () => {
+    const client = createStubClient({
+      "https://api.papermc.io/v2/projects/folia/versions/1.21.1": jsonResponse({
+        project_id: "folia",
+        version: "1.21.1",
+        builds: [1, 2, 3],
+      }),
+      "https://api.papermc.io/v2/projects/folia/versions/1.21.1/builds/3":
+        jsonResponse({
+          channel: "default",
+          downloads: {
+            application: { name: "folia-1.21.1-3.jar", sha256: "cafebabe" },
+          },
+        }),
+    });
+
+    const resolution = await resolveFolia(
+      "1.21.1",
+      { kind: "latest", channel: "stable" },
+      client,
+    );
+    assertEquals(resolution.fileName, "folia-1.21.1-3.jar");
+    assertEquals(
+      resolution.url,
+      "https://api.papermc.io/v2/projects/folia/versions/1.21.1/builds/3/downloads/folia-1.21.1-3.jar",
+    );
+  },
+);
 
 Deno.test(
   "resolveFabric chooses stable loader and installer by default",

@@ -15,6 +15,7 @@ import {
 } from "./utils.ts";
 import { getLatestVanillaVersion, resolveVanilla } from "./servers/vanilla.ts";
 import { getLatestPaperVersion, resolvePaper } from "./servers/paper.ts";
+import { getLatestFoliaVersion, resolveFolia } from "./servers/folia.ts";
 import {
   getLatestFabricMinecraftVersion,
   pickFabricInstaller,
@@ -77,6 +78,8 @@ async function resolveDownload(
       return await resolveVanilla(resolvedVersion, client);
     case "paper":
       return await resolvePaper(resolvedVersion, build, client);
+    case "folia":
+      return await resolveFolia(resolvedVersion, build, client);
     case "fabric":
       return await resolveFabric(
         resolvedVersion,
@@ -104,6 +107,8 @@ async function resolveVersion(
       return await getLatestVanillaVersion(spec.channel, client);
     case "paper":
       return await getLatestPaperVersion(spec.channel, client);
+    case "folia":
+      return await getLatestFoliaVersion(spec.channel, client);
     case "fabric":
       return await getLatestFabricMinecraftVersion(spec.channel, client);
     case "neoforge":
@@ -154,6 +159,7 @@ export const __internals = {
   parseBuildSpecifier,
   resolveVanilla,
   resolvePaper,
+  resolveFolia,
   resolveFabric,
   resolveNeoForge,
   pickFabricInstaller,
